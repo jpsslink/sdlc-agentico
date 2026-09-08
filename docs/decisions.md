@@ -1,0 +1,418 @@
+# Decisões de Arquitetura
+
+Este documento registra as decisões significativas por trás da esteira, com o contexto que as motivou, as alternativas que foram consideradas e as consequências de cada escolha. O objetivo é que qualquer membro do time consiga entender o *porquê* de cada decisão — não apenas o *o quê* — mesmo sem ter acompanhado as discussões originais.
+
+Formato: **Contexto → Decisão → Justificativa → Alternativas Consideradas → Consequências**
+
+---
+
+## ADR-001 — GitHub Copilot Enterprise como Runtime
+
+### Contexto
+
+Para implementar a esteira, é necessário um **runtime de IA** — o sistema que executa os agentes. Esse runtime precisa: carregar contexto de plataforma de forma dinâmica, acessar ferramentas externas (como o BusinessMap MCP), operar em modo agêntico (planejar antes de executar), revisar código automaticamente, e ser acessível a todos os times sem onboarding adicional.
+
+Existem múltiplas opções de runtime disponíveis no mercado.
+
+### Decisão
+
+GitHub Copilot Enterprise é o runtime exclusivo de todos os agentes da esteira.
+
+### Justificativa
+
+**Já adotado na organização.** O Copilot Enterprise está padronizado. Nenhum novo contrato, sem processo de aprovação adicional, sem curva de aprendizado para os times — o IDE já tem o Copilot instalado. Introduzir uma segunda ferramenta de IA fragmentaria o suporte e geraria resistência de adoção.
+
+**Todas as capacidades necessárias existem nativamente:**
+- Plan Mode: o agente escreve um plano antes de executar, visível para o engenheiro aprovar
+- `runSubAgent`: capacidade de delegar subtarefas para outro agente especializado
+- Skills no formato SKILL.md: mecanismo de carregamento dinâmico de contexto
+- Copilot Code Review: revisão automática de PRs com rubrica configurável (`REVIEW.md`)
+- Integração nativa com GitHub Actions: sem glue code adicional para triggers de CI
+
+**Formato de skills compatível.** SKILL.md funciona identicamente em Copilot Enterprise e Claude Code (Anthropic). Se a organização mudar de runtime no futuro, as skills, as instruções e toda a infraestrutura de conhecimento não precisam ser reescritas. O investimento é portável.
+
+**Sem fragmentação de acesso.** Uma ferramenta de IA para todos os times, com políticas centralizadas via GitHub Copilot Enterprise settings. Sem necessidade de gerenciar API keys individuais ou acessos paralelos.
+
+### Alternativas Consideradas
+
+**Claude Code (Anthropic):** Capacidades equivalentes — o playbook que inspira esta esteira foi desenvolvido com Claude Code. Mas requer onboarding adicional para todos os times e não está padronizado na organização. Seria um segundo runtime paralelo com custo de gestão adicional.
+
+**GitHub Actions + LLM via API:** Possível tecnicamente, mas perde a experiência integrada ao IDE (onde o desenvolvedor já está). Exige infraestrutura própria (API calls, gestão de prompts, logging), sem a experiência interativa do Plan Mode. Mais adequado para automações de CI puras que não envolvem o desenvolvedor em tempo real.
+
+### Consequências
+
+- A esteira funciona dentro do fluxo de trabalho existente do desenvolvedor — no IDE, sem nova ferramenta
+- Mudanças nas capacidades do Copilot Enterprise (novos features, limitações) afetam diretamente a esteira
+- A opção de migrar para Claude Code no futuro permanece aberta — skills são portáveis
+
+---
+
+## ADR-002 — Skills ao invés de RAG para Conhecimento de Domínio
+
+### Contexto
+
+Os agentes precisam de contexto de domínio: padrões de plataforma, API do design system, guidelines de UX, regras de segurança. Esse conhecimento existe hoje de forma dispersa e inacessível — em Confluence, em PRs antigos, na memória de engenheiros sênior.
+
+Há duas abordagens arquiteturais para entregar esse conhecimento a um agente:
+
+**Opção A — RAG (Retrieval-Augmented Generation):** construir um sistema que indexa toda a documentação disponível em um banco de dados de vetores (embeddings), e recupera os fragmentos mais relevantes a cada consulta do agente. O agente faz uma pergunta; o sistema busca os chunks mais próximos semanticamente e os inclui no contexto.
+
+**Opção B — Skills (documentação curada + carregamento dinâmico):** escrever documentação curada e específica para cada domínio de conhecimento (API do BBDS, padrões de segurança, etc.), armazená-la em arquivos Markdown versionados, e carregar dinamicamente os arquivos relevantes com base no contexto da sessão.
+
+### Decisão
+
+O conhecimento de domínio é entregue via Skills (SKILL.md) carregadas dinamicamente — não via RAG sobre documentações.
+
+### Justificativa
+
+**RAG introduz incerteza onde precisamos de determinismo:**
+
+RAG depende de recuperação probabilística — o chunk certo pode não ser retornado dependendo de como a consulta foi formulada ou como os embeddings foram indexados. Para contexto de segurança e compliance ("quais dados não podem ser logados?"), "às vezes carrega a regra certa" não é aceitável. Um agente que segue inconsistentemente as regras de segurança é mais perigoso do que um que as segue de forma previsível.
+
+RAG também requer infraestrutura adicional que não existe hoje: um banco de dados de vetores, um pipeline de embedding com curadoria da qualidade dos chunks, tuning contínuo de retrieval, e monitoramento de qualidade. Isso é um investimento de infraestrutura significativo antes de qualquer agente rodar.
+
+**Skills são determinísticas e auditáveis:**
+
+O conteúdo exato que o agente recebe é conhecido — é o arquivo SKILL.md versionado em git. Mudanças no conteúdo da skill passam por PR com aprovação do policy owner (para segurança e compliance) — há uma trilha de auditoria completa de quem aprovou cada mudança e quando. O Copilot carrega a skill inteira quando o contexto se encaixa na `description` — sem retrieval parcial ou chunk incorreto.
+
+**O volume de conhecimento é adequado para skills:**
+
+O conhecimento de plataforma não é petabytes de documentação geral — é um conjunto bem delimitado de padrões específicos: a API de ~50-100 componentes BBDS, padrões de segurança para mobile, convenções de 10-15 bundles. Esse volume cabe em arquivos Markdown de tamanho razoável. RAG seria overhead de infraestrutura para um problema que uma skill resolve completamente.
+
+**Auto-geração resolve o drift de documentação:**
+
+O problema que RAG sobre Confluence teria é que a documentação manual fica desatualizada. Skills curadas têm o mesmo problema para alguns domínios (como a API do BBDS). A solução não é RAG — é auto-geração: a skill `bbds-api` é gerada via ts-morph a partir dos TypeScript types do BBDS. Nunca fica desatualizada porque não é escrita por humanos.
+
+### Alternativas Consideradas
+
+**RAG sobre Confluence/Notion:** Depende da qualidade da documentação existente (baixa e desatualizada). Adiciona infraestrutura de embedding + retrieval que não existe. E o problema de lag de documentação manual persiste.
+
+**Few-shot examples no prompt:** Funciona para padrões simples e estáticos, mas não escala para o volume de conhecimento necessário. Não é versionável separadamente do prompt principal.
+
+**Fine-tuning:** Caro, requer dados de treinamento que não existem na organização, e o conhecimento fica "congelado" no modelo — cada mudança de padrão no BBDS ou na plataforma exigiria re-treinamento. Inviável para um ambiente com releases frequentes.
+
+### Consequências
+
+- Skills precisam ser mantidas — para domínios estáticos (segurança, padrões de plataforma), curadoria humana é necessária; para domínios dinâmicos (API do BBDS), auto-geração em CI resolve
+- O conteúdo que o agente recebe é auditável e testável em evals — qualquer comportamento inesperado pode ser rastreado até uma skill específica
+- Novos domínios de conhecimento (ex: compliance regulatório) requerem criação de novas skills com aprovação dos policy owners — o processo é deliberado, não automático
+
+---
+
+## ADR-003 — Cadeia de Artefatos Explícita (intent → spec → plan)
+
+### Contexto
+
+O ciclo atual de desenvolvimento vai de "card no BusinessMap" a "PR aberto" sem artefatos formais intermediários. O intent do produto fica em comentários de Slack. A spec fica em conversas entre PO e engenheiro. O plan de implementação existe na cabeça do desenvolvedor. O código não rastreia de volta ao problema original.
+
+As consequências são concretas: incidentes de produção sem contexto para diagnóstico, code reviews que descobrem mal-entendimento de requisitos após a implementação completa, e decisões técnicas que não podem ser auditadas porque nunca foram registradas.
+
+### Decisão
+
+Cada estágio do SDLC produz um artefato Markdown versionado em git. Nenhum estágio começa sem o artefato anterior aprovado via merge de PR.
+
+### Justificativa
+
+Esta decisão vem diretamente do [playbook da Anthropic](https://claude.com/blog/the-ai-native-sdlc-playbook) e resolve problemas concretos do ciclo atual:
+
+**Rastro auditável completo.** Qualquer linha de código pode ser rastreada até o `intent.md` — e até o card do BusinessMap. "Por que esse código existe?" tem resposta objetiva. "O que esse código deveria fazer?" tem resposta no `spec.md`. "Como foi decidido implementar assim?" está no `plan.md`.
+
+**Prevenção de drift entre intenção e implementação.** O Agente 04 (Build) lê o `plan.md` e implementa item por item. O Agente 06 (Deploy) lê o `spec.md` e verifica se o código implementa os critérios de aceitação. Se o código divergir do plano, o agente detecta e sinaliza — em vez de o revisor humano descobrir no final do ciclo.
+
+**Decisões conscientes nos gates.** A aprovação de cada artefato é um gate humano explícito — o PO que aprova o `intent.md` está confirmando que o problema está correto. O engenheiro que commita o `plan.md` está confirmando que a estratégia é viável. Não é um "lgtm" rápido num PR com 500 linhas de código.
+
+**Contexto preservado para incidentes.** Quando o Agente 07 detecta um problema em produção, o `intent.md` original está acessível — o on-call entende o que o código deveria fazer antes de investigar por que está falhando.
+
+### Alternativas Consideradas
+
+**Artefatos apenas quando necessário (opcional):** Derrota o propósito. A disciplina dos artefatos é o que cria o rastro — torná-los opcionais significa não adotados. Times sob pressão pulam etapas.
+
+**Documentação em Confluence/Notion:** Sem versionamento junto ao código, sem gatilho de CI quando desatualizada, e duplica a fonte da verdade (o código diz uma coisa, o Confluence diz outra).
+
+**Tudo em comentários de PR:** PR comments não têm estrutura, não são pesquisáveis de forma eficiente, e ficam enterrados no histórico.
+
+### Consequências
+
+- O processo de desenvolvimento tem etapas formais que requerem ação deliberada antes de avançar — não é possível pular de card para código sem criar os artefatos intermediários
+- O tempo entre "card aprovado" e "PR aberto" inclui a criação e aprovação de intent, spec e plan — o ganho de velocidade vem da qualidade maior, não de menos passos
+- Incidentes de produção têm rastreabilidade completa — o on-call sabe o que o código deveria fazer
+
+---
+
+## ADR-004 — Evals para Cada Agente
+
+### Contexto
+
+Agentes de IA são configurados via prompt — `copilot-instructions.md` e skills. Qualquer mudança de configuração pode alterar o comportamento do agente de formas não óbvias. Um novo padrão adicionado ao `platform-standards` pode, inadvertidamente, fazer o Agente 03 (Plan) produzir planos com arquivos errados. Uma skill `bbds-api` atualizada pode fazer o Agente 02 (Spec) mapear componentes incorretamente.
+
+Sem testes, mudanças de configuração são deploy no escuro.
+
+**O que são evals?** Evals (abreviação de "evaluations") são testes para comportamento de agentes. Assim como testes unitários verificam que uma função retorna o resultado correto para inputs conhecidos, evals verificam que um agente produz o output correto para situações conhecidas. A diferença: testes unitários verificam código determinístico; evals verificam comportamento probabilístico de um modelo de linguagem — e por isso requerem graders mais sofisticados.
+
+**pass@1 vs pass^k:**
+- `pass@1`: o agente resolve a tarefa corretamente na primeira tentativa. Para tarefas rotineiras (gerar um intent.md a partir de um card simples), inconsistência é inaceitável — o agente precisa funcionar sempre, não "na maioria das vezes".
+- `pass^k`: o agente resolve a tarefa corretamente na maioria de k tentativas. Para tarefas complexas (diagnóstico de incidente com correlação de múltiplas fontes), consistência em múltiplas tentativas é o que importa — não o sucesso ocasional.
+
+### Decisão
+
+Cada agente tem uma suite de 20–50 evals baseadas em casos reais. Mudanças em `copilot-instructions.md` ou skills disparam `eval-suite.yml` em CI antes do merge. Pass rate global ≥ 85% é o gate de avanço.
+
+### Justificativa
+
+**A analogia com testes de software é direta.** Skills e instruções são código de configuração de agentes. Código sem testes é dívida técnica. Configuração de agentes sem evals é o mesmo risco: mudanças silenciosas que quebram comportamento sem ninguém perceber.
+
+**Graders em camadas reduzem custo sem perder cobertura:**
+
+- **Code-based** (regex, schema check, binary pass/fail): rápidos, sem custo de modelo, determinísticos — usados para verificar estrutura, campos obrigatórios, schema de artefatos
+- **Model-based** (rubrica 1-5 aplicada por um modelo): avalia qualidade semântica onde regex não chega — "o diagnóstico é fundamentado?" não tem resposta binária
+- **Human** (revisão manual): usado para calibrar os model-based graders inicialmente; não escala para CI, mas é a origem do ground truth
+
+**Incidentes de produção viram evals permanentes.** Quando um bug chega a produção que o agente deveria ter prevenido, o caso vira uma task de eval permanente na suite. "Não pode acontecer de novo" tem implementação concreta — não é apenas uma promessa de processo.
+
+**O threshold é uma política de qualidade deliberada.** 85% de pass rate global significa que 15% das tarefas de eval podem falhar e o pipeline ainda avança. Esse número não é fixo — o tech lead define e aprova. Reduzir o threshold para "fazer a CI passar" seria equivalente a deletar testes: requer decisão consciente de quem tem autoridade técnica, não unilateral.
+
+### Alternativas Consideradas
+
+**Testes manuais antes de cada deploy de configuração:** Não escala. O time de plataforma não pode revisar manualmente cada mudança em todos os repos de dezenas de times.
+
+**Sem evals — confiar no Copilot:** O comportamento do agente muda com mudanças de skills/instruções de formas não óbvias. Regressões só seriam detectadas quando um engenheiro ou revisor humano percebesse output incorreto — tarde demais.
+
+**Evals apenas em releases maiores:** Delays na detecção de regressões. Mudanças incrementais acumuladas sem validação podem produzir comportamentos inesperados que são difíceis de rastrear depois.
+
+### Consequências
+
+- CI fica mais lento para mudanças em configuração de agentes (eval suite roda adicional)
+- Cada nova funcionalidade adicionada a um agente requer tasks de eval correspondentes — custo de desenvolvimento mais alto, mas qualidade garantida
+- A confiança no comportamento dos agentes é quantificada e acompanhada ao longo do tempo — o time sabe exatamente quão confiável cada agente está
+
+---
+
+## ADR-005 — Fase 0 como Pré-Requisito Bloqueante
+
+### Contexto
+
+Dezenas de repos existem sem `copilot-instructions.md`, sem padrões documentados, sem contexto de plataforma formal. O conhecimento de plataforma — arquitetura de bundle, anti-patterns, convenções — vive na cabeça de engenheiros sênior e em documentações Confluence desatualizadas.
+
+A tentação é iniciar os agentes o quanto antes, adicionando contexto incrementalmente conforme o time percebe que falta.
+
+### Decisão
+
+A Fase 0 (Bootstrap de Conhecimento de Plataforma) é executada antes de qualquer agente entrar em produção. Sem ela, nenhum repo é incluído na esteira.
+
+### Justificativa
+
+**Agentes operaram com o contexto que recebem — e o contexto determina a qualidade do output.**
+
+Um Agente 04 (Build) sem contexto de plataforma vai:
+- Gerar código que viola convenções de nomenclatura do bundle
+- Usar bibliotecas fora da allowlist aprovada
+- Ignorar anti-patterns conhecidos que causaram problemas antes
+- Criar estruturas de pastas incorretas
+
+O resultado: o code review humano precisa capturar todos esses problemas — cancelando o ganho de velocidade que a esteira prometia. Pior: cria a percepção de que "o Copilot gera código ruim", o que é difícil de reverter organizacionalmente.
+
+**A Fase 0 não é overhead — é o fundamento.**
+
+O bootstrap é progressivo e priorizado: repos com maior volume de mudanças recebem atenção primeiro. O nível mínimo (um `copilot-instructions.md` base com estrutura, comandos e anti-patterns críticos) leva ~2 semanas por cluster de repos e pode ser feito em paralelo por múltiplos engenheiros de plataforma.
+
+O investimento se paga nas primeiras semanas de uso dos agentes: menos ciclos de review, menos rework, menos problemas básicos passando pelo processo.
+
+**O bootstrap valida o conhecimento de plataforma ao mesmo tempo.**
+
+Formalizar os padrões em skills cria oportunidade de identificar inconsistências entre o que diferentes engenheiros consideram "padrão". O processo de review dos skills (via PR) é em si uma forma de alinhar o time sobre as convenções — independente do uso de agentes.
+
+### Alternativas Consideradas
+
+**Adicionar contexto incrementalmente (começar sem Fase 0):** O argumento é velocidade — iniciar os agentes imediatamente e adicionar skills conforme percebemos que faltam. O problema: os primeiros outputs dos agentes são ruins, criam resistência à adoção, e a reputação de "o agente não funciona bem aqui" é difícil de reverter mesmo depois que o contexto está completo.
+
+**Context window grande como substituto de skills:** Jogar toda a documentação disponível no contexto de cada sessão não é escalável (contextos longos aumentam latência e custo), e é menos eficaz do que skills curadas — contexto irrelevante dilui o sinal útil.
+
+### Consequências
+
+- Há um período de 4-6 semanas de investimento em conhecimento antes do primeiro agente funcionar bem em produção
+- O processo de bootstrap revela gaps de documentação e inconsistências de padrões — é uma oportunidade de alinhamento do time
+- Repos sem Fase 0 completa ficam fora da esteira — cria incentivo para priorizar o bootstrap
+
+---
+
+## ADR-006 — BBDS como Infraestrutura Auto-gerada (Fase 0b)
+
+### Contexto
+
+O BBDS é o design system obrigatório para novos fluxos React Native. Ele tem releases frequentes — novas versões trazem novos componentes, novos props, e props que ficam deprecated com migration paths para os novos.
+
+Sem conhecimento atualizado da API do BBDS, o Agente 04 (Build) usa props incorretas ou obsoletas. Isso cria um ciclo:
+
+```
+Agente 02 especifica componente BBDS com prop errada
+→ Agente 04 implementa com a prop errada
+→ Agente 06 (code review) não detecta (prop não é óbvia)
+→ Bug visual ou runtime error em produção
+→ Rework no ciclo seguinte
+```
+
+Documentação manual do BBDS não é sustentável: a cada release, alguém precisa ler o changelog, atualizar o documento, e fazer review. Na prática, isso não acontece — a documentação fica para trás.
+
+### Decisão
+
+`bbds-api-reference.md` é gerado automaticamente via `ts-morph` a partir dos TypeScript types do BBDS cada vez que há um version bump no `package.json`. A documentação de UX (`bbds-ux-guidelines.yaml`) é curada separadamente pelo time de UX. Três skills resultantes: `bbds-api`, `bbds-ux-guidelines`, `bbds-patterns`.
+
+### Justificativa
+
+**O que é ts-morph e por que funciona aqui:**
+
+`ts-morph` é uma biblioteca Node.js que permite ler e analisar código TypeScript programaticamente — sem compilar o código, apenas parseando a AST (Abstract Syntax Tree). O BBDS já é escrito em TypeScript com tipos explícitos para cada prop (`ButtonProps`, `CardProps`, etc.) e JSDoc comments que documentam `@default`, `@deprecated`, e descrições.
+
+O script `extract-bbds-types.ts` lê esses tipos e extrai:
+- Quais props existem por componente
+- O tipo de cada prop (`string`, `"primary" | "secondary"`, `boolean`)
+- O valor default (de `defaultProps` ou da definição do tipo)
+- Quais props têm `@deprecated` e qual é o migration path documentado no JSDoc
+
+O resultado é um arquivo Markdown estruturado. O processo leva menos de 30 minutos e roda automaticamente em CI após cada bump de versão do BBDS — lag zero entre release e documentação atualizada.
+
+**Separação de fontes por natureza do conhecimento:**
+
+A API (props, tipos, defaults, deprecated) é conhecimento que **vive no código** — extraível programaticamente, sempre atualizado, sem intervenção humana.
+
+Os guidelines de uso (quando usar `Button` vs `ActionButton`, quando não usar `Modal` em favor de um bottom sheet, combinações de componentes que criam experiências ruins) são conhecimento de **julgamento de UX** — não estão nos tipos TypeScript. Esse conhecimento é curado pelo time de UX e é mais estável (muda com decisões de design, não a cada release do BBDS).
+
+Misturar as duas fontes num único mecanismo (auto-geração) resultaria em guidelines de UX que não existem nos types, ou num processo de curação manual que atrasa a atualização da API.
+
+**O problema sem isso:**
+
+Agente 02 especifica `<Button color="blue">` → ts-morph já extraiu que `color` está deprecated desde v3.1 → a skill `bbds-api` já tem o migration path → Agente 04 usa `<Button variant="primary">` automaticamente. Sem a skill auto-gerada, o agente usa o prop deprecated porque não há como saber que ele mudou.
+
+### Alternativas Consideradas
+
+**Documentação Storybook como contexto:** Storybook é ótimo para exploração visual, mas não tem toda a API documentada de forma estruturada para consumo por máquina. E fica desatualizado da mesma forma que documentação manual.
+
+**Skill curada manualmente:** Exigiria atualização manual a cada release do BBDS — insustentável com a frequência de releases atual.
+
+**Sem skill de BBDS:** Agentes usam conhecimento geral de React Native + tentativa e erro. Alta taxa de props incorretas e deprecated. Code review humano captura a maioria, mas com custo de ciclos adicionais.
+
+### Consequências
+
+- O processo de auto-geração precisa ser validado: o script `extract-bbds-types.ts` pode falhar se a estrutura dos types do BBDS mudar. Monitorar o workflow `bbds-api-sync.yml` em CI
+- Props com documentação JSDoc incompleta no BBDS resultam em documentação incompleta na skill — melhoria da qualidade do JSDoc no BBDS melhora diretamente a qualidade dos agentes
+- A skill `bbds-ux-guidelines.yaml` continua a ser curada pelo time de UX — requer processo de review e atualização quando padrões de UX mudam
+
+---
+
+## ADR-007 — Pipeline de Correlação para Monitoramento de Jornadas
+
+### Contexto
+
+A organização tem duas ferramentas de monitoramento de produção com sinais complementares:
+- **Firebase Crashlytics**: detecta crashes técnicos com causa identificável (arquivo:linha no stacktrace)
+- **Journey Monitor**: detecta quando usuários não completam fluxos negociais
+
+O problema com falhas de jornada: o mesmo sinal ("taxa de conclusão do fluxo X caiu 34%") pode ter quatro causas completamente diferentes — e a ação correta é diferente para cada uma:
+
+| Causa | Sinal adicional | Ação correta |
+|---|---|---|
+| Erro de endpoint | Journey Monitor detecta API com erro | Acionar time de backend, avaliar rollback de endpoint |
+| Crash na tela problemática | Firebase tem crash na mesma tela/período | Corrigir bug técnico (stacktrace disponível) |
+| Regressão por commit recente | git log tem commit nessa tela recentemente | Avaliar rollback do commit, acionar autor |
+| Bug de lógica silencioso | Nenhum dos sinais acima | Investigação com session recording, hipótese aberta |
+
+Se o Copilot recebe apenas o sinal de queda de jornada sem contexto adicional, ele precisa especular qual das quatro causas é a mais provável — e pode errar. Um diagnóstico incorreto direciona o time para a solução errada, desperdiçando tempo de on-call.
+
+### Decisão
+
+Falhas de jornada passam por um **pipeline de correlação determinístico** antes da análise do Copilot. A correlação cruza: erros de endpoint (fornecidos pelo Journey Monitor), crashes do Firebase na mesma tela/período, commits recentes tocando a tela problemática, e deploys recentes do bundle. O Copilot recebe o "correlation bundle" completo e segue uma árvore de diagnóstico com branches predefinidos.
+
+### Justificativa
+
+**Prevenção de hallucination no diagnóstico:**
+
+Modelos de linguagem tendem a preencher gaps de informação com hipóteses plausíveis mas incorretas (hallucination). Sem correlação, o Copilot receberia "taxa de sucesso caiu 34% no fluxo X" e poderia especular: "provavelmente é problema de UX" ou "pode ser relacionado ao último deploy" — hipóteses não fundamentadas.
+
+Com o correlation bundle, o Copilot recebe evidências concretas: "endpoint retornando 503 + commit abc123 em ConfirmacaoDadosScreen.tsx há 6 horas + deploy v2.4.1 há 8 horas". A hipótese é fundamentada em dados — não em especulação.
+
+**A árvore de diagnóstico é testável em evals:**
+
+Cada branch da árvore tem inputs e outputs claros. Evals podem validar cada caminho com casos históricos reais:
+- Task "endpoint_error": signal com `endpoint_errors: [{code: 503}]` → grader verifica que o intent.md menciona o endpoint e direciona para o time correto
+- Task "crash_found": signal sem endpoint error, com crash Firebase → grader verifica que o intent.md inclui o stacktrace e o arquivo:linha corretos
+- E assim por diante para cada branch
+
+Sem a árvore predefinida, o diagnóstico seria livre — impossível criar ground truth para evals.
+
+**A granularidade de `screen_id` é o diferencial:**
+
+O Journey Monitor já entrega qual tela específica do funil tem queda de navegação — não apenas "o fluxo X tem problema". Com o `screen_id` em mãos, a correlação com git log (`-- *ConfirmacaoDadosScreen*`) e Firebase (crashes naquela tela específica) é precisa. Sem essa granularidade, a correlação seria muito ampla para ser útil.
+
+### Alternativas Consideradas
+
+**Análise direta pelo Copilot sem correlação:** Alto risco de hipóteses incorretas. Evals seriam impossíveis de criar com ground truth. O on-call receberia diagnósticos que podem estar certos ou errados sem como distinguir.
+
+**Cada fonte de monitoramento gera seu próprio intent.md independente:** O mesmo incidente poderia gerar 3 intents.md simultâneos (Firebase + Journey Monitor + CI). Cria ruído para o on-call que precisa triagear múltiplos items para o mesmo problema. A correlação une os sinais em uma hipótese única e coesa.
+
+**Dashboard manual para o on-call correlacionar:** Remove o benefício de automação. O on-call ainda faz o trabalho intelectual de correlacionar Firebase + git + deploys manualmente a cada incidente — o que a esteira automatiza.
+
+### Consequências
+
+- A qualidade do diagnóstico depende da qualidade da correlação: se o Journey Monitor não consegue identificar o `screen_id` para um fluxo específico, a correlação com git log fica menos precisa
+- O pipeline de correlação adiciona latência ao diagnóstico (3 passos paralelos em GitHub Actions) — o intent.md aparece em minutos, não segundos
+- Casos que a árvore de diagnóstico não cobre (combinações de múltiplas causas simultâneas) caem no branch "silent failure" — investigação manual ainda necessária nesses casos
+
+---
+
+## ADR-008 — Gates de Governança Humana por Estágio
+
+### Contexto
+
+Agentes de IA cometem erros. A questão não é se — é com qual frequência e com qual impacto. O risco de um erro não é uniforme em todos os estágios do desenvolvimento:
+
+| Estágio | Tipo de erro possível | Impacto se não detectado |
+|---|---|---|
+| intent.md | Problema mal definido, outcome incorreto | Equipe implementa a solução errada — ciclo desperdiçado |
+| spec.md | Requisito faltando, flag de compliance ignorada | Bug de produto ou violação de compliance descoberta tarde |
+| plan.md | Estratégia inviável, arquivo errado listado | Implementação que descobre no meio que não funciona |
+| código | Bug, prop BBDS errada, sem tratamento de erro | Problema capturado em CI ou code review — custo médio |
+| PR | Bug sutil não detectado pelo CI | Problema em produção — custo alto |
+| deploy prod | Deploy no momento errado, sem rollback | Incidente com usuários — custo muito alto |
+
+### Decisão
+
+Cada estágio tem um gate humano explícito antes de avançar. Nenhum agente aprova seu próprio output. O nível de autonomia escala inversamente ao risco: dev (livre, CI automático), staging (automático com CI + 1 humano), prod (release manager nomeado).
+
+### Justificativa
+
+**Separação de funções — o mesmo princípio de auditoria de sistemas financeiros.**
+
+O mesmo desenvolvedor que escreve o código não pode ser o único revisor. O mesmo agente que gera o `intent.md` não pode aprovar o `intent.md`. Essa separação não é burocracia — é o mecanismo que detecta erros de forma independente.
+
+**Autonomia é conquistada progressivamente.**
+
+A esteira começa conservadora: gates em todos os estágios, aprovação humana explícita. À medida que o pass rate dos evals sobe e a confiança no comportamento dos agentes cresce, alguns gates podem ser relaxados — por exemplo, auto-merge de intent.md de baixo risco após N dias sem contestação.
+
+O caminho inverso — começar autônomo e adicionar gates após um incidente — é muito mais difícil. Incidentes criam resistência organizacional que pode matar a adoção da esteira inteira. "O Copilot deployou código errado em produção" é uma história que precisa ser evitada.
+
+**Gates mapeiam para processos existentes — não criam burocracia nova.**
+
+- PO aprova intent e spec: já faz isso hoje, informalmente
+- Engenheiro commita o plan: já valida a abordagem hoje, mentalmente
+- Release manager aprova deploy em prod: processo existente
+- Copilot Code Review + 1 humano: review de PR já existe; o Copilot aumenta a cobertura
+
+A esteira formaliza e torna explícito o que já acontecia implicitamente. O humano continua fazendo o mesmo julgamento — agora com mais contexto (o artefato do agente como ponto de partida) e de forma registrável.
+
+**O gate de produção é permanente.**
+
+Deploy para produção requer aprovação explícita do release manager via GitHub environment protection — não é um checkbox no PR. Isso permanece independente de quanto os agentes melhoram. O risco de um deploy em produção nunca é zero, e uma aprovação humana consciente é o último mecanismo de defesa.
+
+### Alternativas Consideradas
+
+**Full autonomy desde o início:** Velocidade máxima, mas um erro em produção cria resistência organizacional que pode matar a adoção da esteira inteira. O risco de curto prazo não justifica a velocidade.
+
+**Gate único no final (antes do deploy):** Não detecta problemas cedo o suficiente. Um spec incorreto descoberto na revisão do PR representa rework de todo o ciclo de Build + Test + Deploy — o artefato errado se propagou por estágios inteiros antes de ser detectado.
+
+**Gates apenas em produção:** Melhoria em relação ao anterior, mas perde o valor dos artefatos (intent, spec, plan) como pontos de decisão conscientes que criam o rastro de auditoria.
+
+### Consequências
+
+- O pipeline tem latência em cada gate — o tempo de aprovação humana é variável e não controlável pela esteira
+- Gates explícitos criam registro de quem aprovou o quê e quando — trilha de auditoria completa para incidentes
+- A autonomia pode aumentar gradualmente conforme confiança é construída — o design permite isso sem mudar a arquitetura
