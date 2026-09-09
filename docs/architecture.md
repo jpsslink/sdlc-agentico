@@ -242,6 +242,13 @@ spec.md ─────── O QUÊ detalhado.
                 Flags de compliance: 🔴 Important (bloqueante) e 🟡 Warning (a endereçar).
                 NÃO contém: plano de implementação técnica.
     │
+    │  Co-artefato: api-contract.md ── Contrato de API para o backend.
+    │               Gerado na mesma sessão do spec.md pelo Agente 02. Cada endpoint
+    │               necessário classificado em: reutilizar (existe e atende), extensão
+    │               (existe, precisa de delta), ou novo (não existe — insumo para o time
+    │               de backend). Classificação automática quando MCP de catálogo disponível;
+    │               manual pelo PO quando não disponível.
+    │
     │  Gate: PO + policy owners (segurança, compliance, UX)
     │  Pergunta: "Os requisitos estão corretos? As flags foram endereçadas pelos
     │             donos das políticas?"
@@ -261,6 +268,9 @@ plan.md ─────── O COMO.
 código ──────── A implementação.
                 Guiada pelo plan.md item por item. Tests gerados junto com o código.
                 Props BBDS validadas contra bbds-api-reference.md.
+                Para cada endpoint em api-contract.md sem implementação real: adapter
+                pattern gerado (interface + mock + index com feature flag). Telas importam
+                apenas a interface — nunca o mock diretamente.
                 Lint e testes passando localmente antes do push.
     │
     │  Gate: CI green
@@ -279,6 +289,11 @@ produção ───── Deploy escalonado:
                Dev: automático após CI
                Staging: automático após merge (validação antes de prod)
                Prod: aprovação do release manager via GitHub environment protection
+    │
+    │  Gate de backend: se endpoint novo ainda sem ServiceImpl.ts →
+    │    deploy com feature flag desativada (mock ativo, feature não exposta a usuários).
+    │    Feature flag ativada manualmente pelo release manager quando backend real estiver
+    │    validado em staging.
 ```
 
 ---

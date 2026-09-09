@@ -121,9 +121,9 @@ A documentação completa do schema e da integração com BusinessMap MCP está 
 | # | Agente | Input | Output | Gate humano |
 |---|---|---|---|---|
 | — | *(externo)* | Card BusinessMap | `intent.md` aprovado | Área negocial + plataforma de agilidade |
-| 02 | Spec | `intent.md` + protótipo Figma | `spec.md` + componentes BBDS mapeados | PO + policy owners resolvem flags |
-| 03 | Plan | `spec.md` + estado atual do repo | `plan.md` | Engenheiro commita explicitamente |
-| 04 | Build | `plan.md` | Código + testes | CI green (testes + lint + evals) |
+| 02 | Spec | `intent.md` + protótipo Figma | `spec.md` + `api-contract.md` | PO + policy owners resolvem flags |
+| 03 | Plan | `spec.md` + `api-contract.md` | `plan.md` com adapter pattern definido | Engenheiro commita explicitamente |
+| 04 | Build | `plan.md` + `api-contract.md` | Código + testes + adapters de backend | CI green (testes + lint + evals) |
 | 05 | Test | Código + histórico de evals | Eval pass rate + diagnóstico de CI | Threshold configurado pelo tech lead |
 | 06 | Deploy | PR + `REVIEW.md` | Review comentado + aprovação | 1 humano + CI green |
 | 07 | Maintain | Produção (crashes + jornadas) | `intent.md` de incidente | On-call faz triagem |

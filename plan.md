@@ -71,6 +71,7 @@ sdlc-agentico/
 │   ├── intent.md                        # Template do artefato intent
 │   ├── spec.md                          # Template do artefato spec
 │   ├── plan.md                          # Template do artefato plan
+│   ├── api-contract.md                  # Template do contrato de API (co-artefato do Agente 02)
 │   ├── REVIEW.md                        # Critérios de revisão de PR
 │   ├── bands.yaml                       # Config de monitoramento (Stage 6)
 │   └── copilot-instructions.md          # Template base para repos de equipe
@@ -360,11 +361,14 @@ durante a geração, não descobertas em revisão semanas depois.
 
 **Ferramenta**: Copilot agent mode + skills de política + skills BBDS (Fase 0b)
 
-**Input**: `intent.md` aprovado + políticas da organização (via `.github/skills/`) + protótipo Figma (referência)
+**Input**: `intent.md` aprovado + políticas da organização (via `.github/skills/`) + protótipo Figma (referência) + MCP de catálogo de serviços *(quando disponível — consulta quais endpoints de backend já existem antes de gerar o contrato)*
 
-**Output**: `spec.md` com: requisitos funcionais, não-funcionais, constraints de design
-(sem mockup — referência ao Figma), critérios de aceitação, flags de compliance,
-**componentes BBDS recomendados por tela** (com justificativa via bbds-ux-guidelines).
+**Output**:
+- `spec.md` com: requisitos funcionais, não-funcionais, constraints de design (sem mockup — referência ao Figma), critérios de aceitação, flags de compliance, **componentes BBDS recomendados por tela** (com justificativa via bbds-ux-guidelines).
+- `api-contract.md` com cada endpoint de backend necessário à feature, classificado em:
+  - **Reutilizar**: endpoint existente atende o caso — referenciado, sem contrato novo
+  - **Extensão**: endpoint existe mas precisa de campos adicionais — contrato apenas do delta
+  - **Novo**: não existe — contrato completo (endpoint, request/response, auth, SLA esperado) — insumo para o time de backend
 
 **Nota sobre Design:** A fase de design visual continua manual (UX + engenheiros no
 Figma). O spec.md documenta os requisitos de UX/design com referência ao arquivo
@@ -375,10 +379,13 @@ estiver disponível em escala, o MCP do Figma pode ser ativado para puxar specs 
 1. PO abre Copilot agent mode com `#file:intent.md`
 2. Copilot carrega automaticamente as skills relevantes de `.github/skills/` (security,
    platform-standards, compliance, **bbds-ux-guidelines**, **bbds-patterns**) com base no contexto
-3. Copilot gera spec.md sinalizando conflitos/riscos em seção `## Flags`,
+3. *[Quando MCP de catálogo disponível]* Copilot consulta o catálogo de serviços e classifica
+   cada chamada de backend necessária: reutilizar, extensão, ou novo
+4. Copilot gera `spec.md` sinalizando conflitos/riscos em seção `## Flags`,
    incluindo flag quando componente proposto viola `avoid_when` do bbds-ux-guidelines
-4. PO endereça flags com policy owners antes de commitar
-5. Commit de `spec.md` dispara workflow `intent-to-spec.yml` que valida campos
+5. Copilot gera `api-contract.md` com todos os endpoints necessários e sua classificação
+6. PO endereça flags com policy owners antes de commitar
+7. Commit de `spec.md` + `api-contract.md` dispara workflow `intent-to-spec.yml` que valida campos
 
 **GitHub Action `intent-to-spec.yml`:**
 - Trigger: push de spec.md
@@ -416,17 +423,16 @@ institucional vira arquivo versionado no repo.
 
 **Ferramenta**: Copilot agent mode + plan mode no VS Code
 
-**Input**: `spec.md` + `.github/copilot-instructions.md` do repo-alvo
+**Input**: `spec.md` + `api-contract.md` + `.github/copilot-instructions.md` do repo-alvo
 
-**Output**: `plan.md` com: arquivos que mudam, ordem de trabalho, riscos
-identificados, estratégia de testes, critérios de "pronto".
+**Output**: `plan.md` com: arquivos que mudam, ordem de trabalho, riscos identificados, estratégia de testes, critérios de "pronto". Para cada endpoint no `api-contract.md` classificado como "Novo" ou "Extensão" sem implementação real ainda disponível: estrutura do adapter pattern a ser gerada pelo Agente 04 (`*Service.ts` interface + `*ServiceMock.ts` mock + `index.ts` com feature flag).
 
 **Pré-requisito por repo:** `.github/copilot-instructions.md` deve existir (gerado
 na Fase 0 de bootstrap). Sem ele, o agente opera cego — bloquear via status check no CI.
 
 **Fluxo concreto:**
 1. Engenheiro abre VS Code no repo do bundle correto
-2. Copilot agent mode com `#file:spec.md` + copilot-instructions.md carregado automaticamente
+2. Copilot agent mode com `#file:spec.md` + `#file:api-contract.md` + copilot-instructions.md carregado automaticamente
 3. Prompt: `"Gere um plan.md para implementar esta spec no contexto deste repo"`
 4. Copilot analisa o repo, lista arquivos afetados, propõe ordem de trabalho
 5. Engenheiro interroga o plano (riscos, alternativas, impacto em outros bundles)
@@ -471,9 +477,32 @@ e API correta do BBDS aplicados automaticamente via skills.
 
 **Ferramenta**: Copilot agent mode + Copilot Edits (VS Code) + skills BBDS (Fase 0b) + figma-to-code skill
 
-**Input**: `plan.md` + `.github/copilot-instructions.md` + protótipo Figma referenciado no spec.md
+**Input**: `plan.md` + `api-contract.md` + `.github/copilot-instructions.md` + protótipo Figma referenciado no spec.md
 
-**Output**: Código implementado + testes
+**Output**: Código implementado + testes + para cada endpoint em `api-contract.md` classificado como "Novo" ou "Extensão" sem implementação real: adapter pattern completo (interface + mock + index com feature flag)
+
+**Adapter Pattern para Backend — Padrão Obrigatório**
+
+Para qualquer chamada de backend sem implementação real disponível, o Agente 04 gera obrigatoriamente a estrutura de adapter:
+
+```
+services/
+  <feature>/
+    <Feature>Service.ts          ← interface (a porta — o contrato tipado)
+    <Feature>ServiceMock.ts      ← implementação mock seguindo o api-contract.md
+    <Feature>ServiceImpl.ts      ← real (gerado apenas quando backend estiver pronto)
+    index.ts                     ← exporta mock ou impl, controlado por feature flag
+```
+
+As telas e componentes importam **apenas a interface** — nunca o mock ou impl diretamente:
+
+```ts
+// PaymentScreen.tsx
+import { usePaymentService } from '@services/payment'
+// não sabe e não precisa saber se é mock ou real
+```
+
+Quando o backend ficar pronto, um PR isolado cria o `*ServiceImpl.ts` e atualiza o `index.ts` — **nenhum arquivo de tela é tocado**.
 
 **Fluxo concreto:**
 1. Engenheiro abre Copilot Edits com `#file:plan.md` como contexto
@@ -601,6 +630,19 @@ comentários de review. Humano aprova, não substitui.
 # Deploy para prod requer aprovação manual de release manager
 # Configurado como "required reviewers" no environment "production"
 ```
+
+**Gate adicional — prontidão de backend:**
+```yaml
+# Verificação automática no workflow de deploy:
+# Para cada endpoint em api-contract.md classificado como "Novo" ou "Extensão":
+#   - Existe <Feature>ServiceImpl.ts no repo?
+#     → SIM: deploy usa implementação real
+#     → NÃO: verifica se feature flag está DESATIVADA
+#       → Flag desativada + ServiceMock ativo → deploy autorizado (feature oculta para usuários)
+#       → Flag ativada sem ServiceImpl → deploy BLOQUEADO (mock seria exposto em produção)
+```
+
+A ativação da feature flag após o backend ficar pronto é um gate humano explícito do release manager — não automático.
 
 **Tiering de autonomia:**
 - Dev: agente deploya livremente (via workflow)
@@ -804,10 +846,18 @@ action: ping time de API + avaliar rollback de v2.4.1
   - Action é proporcional à severity e ao diagnosis_path?
 - Métricas: time-to-intent, diagnosis_path accuracy, resolution rate, repeat incident rate
 
+**Monitoramento de prontidão de backend:**
+
+O Agente 07 também rastreia o estado dos adapters de backend nos repos da esteira:
+- Quantos `*ServiceMock.ts` existem vs. `*ServiceImpl.ts` correspondentes (débito de backend)
+- Features com feature flag desativada há mais de N dias sem `*ServiceImpl.ts` — sinaliza como bloqueio de entrega
+- Quando `*ServiceImpl.ts` é adicionado e o PR é mergeado, sinaliza que a feature está pronta para ativação (input para o release manager)
+
 **Medição:**
 - Leading: Tempo de detecção → intent.md na fila de triagem (target: <30min)
 - Lagging: % de achados que viram fixes; incidentes repetidos por classe (-50% em 6m);
-  diagnosis_path correto vs. root cause real confirmado no post-mortem
+  diagnosis_path correto vs. root cause real confirmado no post-mortem;
+  % de endpoints em api-contract.md com impl real em produção (débito de backend resolvido)
 
 ---
 
@@ -970,3 +1020,9 @@ Fase 2 TBD:  Skills de branding, compliance, ux (criação com policy owners)
 
 6. **Skills — Fase 2**: Agendar sessões de trabalho com policy owners (branding,
    security, compliance, UX) para criar as 4 skills pendentes.
+
+7. **MCP de catálogo de serviços de backend** (melhoria planejada para Agente 02):
+   Expor os serviços de backend existentes via MCP para que o Agente 02 consulte
+   automaticamente quais endpoints já existem ao gerar o `api-contract.md`. Sem o MCP,
+   a classificação (reutilizar/extensão/novo) é manual. Com o MCP, é automatizada.
+   Bloqueado por: existência e exposição de um catálogo de serviços na organização.

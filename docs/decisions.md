@@ -532,3 +532,54 @@ A área negocial pode usar um agente (como o Agente 01 documentado em `docs/agen
 - Incidentes detectados pelo Agente 07 geram `intent.md` automaticamente — esses passam pela triagem do on-call antes de entrar na fila da área negocial/agilidade para priorização
 
 **Bloqueador:** Fase 0 não entra em produção sem essa decisão — o mecanismo de distribuição precede a criação do conteúdo.
+
+---
+
+## ADR-011 — Contratos de API de Backend e Adapter Pattern
+
+### Contexto
+
+Funcionalidades mobile frequentemente dependem de serviços de backend. Em uma esteira que começa no Agente 02 (Spec), o desenvolvimento mobile precisa avançar independentemente de quando o backend ficará disponível — e quando o backend ficar pronto, não deve exigir alterações nas telas já implementadas.
+
+Dois problemas precisam ser resolvidos:
+1. **Como a esteira sabe o que o backend precisa entregar?** — sem esse artefato, o Agente 03 (Plan) e o Agente 04 (Build) operam às cegas sobre as dependências de backend
+2. **Como implementar sem o backend pronto?** — bloquear o mobile até o backend existir serializa trabalho que pode ser paralelo; mock inline nas telas cria acoplamento que exige modificações quando o backend chega
+
+### Decisão
+
+1. O **Agente 02 (Spec)** produz um segundo artefato: `api-contract.md`, que classifica cada endpoint necessário em: **reutilizar** (existe e atende), **extensão** (existe, precisa de delta), ou **novo** (não existe — insumo para o time de backend). Quando um MCP de catálogo de serviços estiver disponível, a classificação é automática; sem ele, é informada pelo PO.
+
+2. O **Agente 04 (Build)** usa obrigatoriamente **adapter pattern** para qualquer endpoint sem implementação real. Gera a interface (porta), o mock (implementação de desenvolvimento) e a estrutura para a implementação real quando disponível. Telas nunca importam o mock diretamente — apenas a interface.
+
+3. O **Agente 06 (Deploy)** verifica prontidão de backend: se `*ServiceImpl.ts` não existe para um endpoint necessário, o deploy acontece com **feature flag desativada** — o mock está ativo mas a feature não é exposta a usuários. A ativação é gate humano explícito do release manager.
+
+### Justificativa
+
+**O `api-contract.md` cria um handoff formal com o backend:**
+
+Sem esse artefato, a comunicação sobre o que o backend precisa entregar é informal — Slack, comentário de PR, ou suposição do engenheiro. Com o `api-contract.md`, há um documento versionado em git que o time de backend usa como especificação — equivalente ao papel que o `intent.md` tem para a esteira mobile.
+
+**O adapter pattern garante zero acoplamento:**
+
+A alternativa mais comum — flags no código (`if (USE_MOCK)`) — espalha lógica de mock pelas telas. O adapter pattern isola completamente: a troca de mock para implementação real é uma mudança em um único arquivo (`index.ts` do serviço). Nenhum arquivo de tela, nenhum teste de tela, nenhuma lógica de negócio é tocada.
+
+**Feature flag no deploy garante que mock nunca vai a produção exposto:**
+
+O deploy com feature flag desativada permite que o código esteja em produção (pronto para ativar sem novo deploy), o Agente 07 rastreie o estado (débito de backend pendente), e o backend seja validado em staging antes da ativação. A ativação é um gate humano — o release manager confirma que o backend real está respondendo antes de expor a feature a usuários.
+
+### Alternativas Consideradas
+
+**Bloquear o desenvolvimento mobile até o backend existir:** Serializa trabalho que pode ser paralelo. Times de mobile e backend podem trabalhar simultaneamente com o contrato como ponto de sincronização.
+
+**Mock inline nas telas (sem adapter):** Rápido de implementar, mas quando o backend chega, as telas precisam ser modificadas para remover o mock — risco de regressão e necessidade de retestar todas as telas afetadas.
+
+**Nenhum contrato formal — implementar quando o backend existir:** Atrasa o feedback. O time de backend não sabe o que precisa entregar até o desenvolvimento mobile estar completo — podendo gerar endpoints que não atendem o contrato real.
+
+### Consequências
+
+- O Agente 02 produz dois artefatos por funcionalidade: `spec.md` + `api-contract.md`
+- O Agente 04 segue um padrão estrutural obrigatório para chamadas de backend sem impl real
+- O Agente 06 tem um gate adicional de verificação de prontidão de backend antes do deploy em prod
+- O `api-contract.md` é o artefato de handoff entre plataforma mobile e times de backend — deve ser acordado e mantido conjuntamente
+- O Agente 07 rastreia débito de backend: quantos `*ServiceMock.ts` existem sem `*ServiceImpl.ts` correspondente
+- Quando um MCP de catálogo de serviços existir, o Agente 02 automatiza a classificação dos endpoints — o padrão se mantém, a entrada muda
