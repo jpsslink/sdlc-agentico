@@ -70,13 +70,17 @@ A esteira não substitui engenheiros — move o humano para onde seu julgamento 
 
 ---
 
-## O Loop de 7 Agentes
+## Escopo da Esteira — 6 Agentes (Agentes 02–07)
 
-Cada estágio do SDLC tem um agente responsável. O output de cada estágio é um **artefato versionado** (arquivo Markdown em git) que serve de input para o próximo — criando rastro auditável do card ao código.
+### O que está no escopo e o que é pré-requisito externo
+
+A criação do `intent.md` — a documentação formal do problema a resolver — é responsabilidade da **área negocial em conjunto com a plataforma de agilidade**. Esse processo de definição e refinamento de intenção acontece fora da plataforma mobile e não faz parte desta esteira.
+
+O que a esteira mobile recebe é o `intent.md` **já aprovado**, com schema definido. A partir dele, seis agentes levam a ideia até o código em produção — e um sétimo (monitoramento) fecha o loop gerando novos intents quando problemas são detectados.
 
 ```mermaid
 graph LR
-    A01["01 Intent\nBusinessMap → intent.md"]
+    EXT["🏦 Área Negocial\n+ Plataforma de Agilidade\n(fora do escopo mobile)"]
     A02["02 Spec\nintent.md → spec.md"]
     A03["03 Plan\nspec.md → plan.md"]
     A04["04 Build\nplan.md → código"]
@@ -84,15 +88,39 @@ graph LR
     A06["06 Deploy\nPR → produção"]
     A07["07 Maintain\nmonitoramento contínuo"]
 
-    A01 --> A02 --> A03 --> A04 --> A05 --> A06 --> A07
-    A07 -->|"novo intent.md"| A01
+    EXT -->|"intent.md\naprovado"| A02
+    A02 --> A03 --> A04 --> A05 --> A06 --> A07
+    A07 -->|"intent.md\nde incidente"| EXT
 ```
 
-O loop se fecha: um incidente detectado pelo Agente 07 em produção gera um `intent.md` que re-entra no pipeline pelo Agente 01. O bug de hoje é a feature de amanhã, com rastreabilidade completa do incidente original ao código que o resolve.
+O loop se fecha: um incidente detectado pelo Agente 07 em produção gera um `intent.md` que entra na fila da área negocial/agilidade — que o prioriza e aprova antes de re-entrar na esteira mobile. O bug de hoje é a feature de amanhã, com rastreabilidade completa.
+
+### intent.md — Contrato de Interface
+
+Para que o Agente 02 processe o `intent.md`, ele precisa seguir o schema definido em [`templates/intent.md`](templates/intent.md). Os campos mínimos obrigatórios:
+
+```yaml
+---
+id: [ID do card]
+source: businessmap | manual
+created_by: [autor]
+status: approved     # obrigatório — rascunhos são rejeitados pelo workflow
+businessmap_url: [URL do card]
+---
+## Problema          # O quê e por quê — com outcome esperado mensurável
+## Usuários Afetados
+## Outcome Esperado  # Mensurável
+## Constraints Conhecidas
+## Perguntas Abertas # Perguntas sem resposta viram flags na spec
+```
+
+A documentação completa do schema e da integração com BusinessMap MCP está em [`docs/agents/01-intent.md`](docs/agents/01-intent.md) (referência para a plataforma de agilidade).
+
+### Os 6 Agentes da Esteira Mobile
 
 | # | Agente | Input | Output | Gate humano |
 |---|---|---|---|---|
-| 01 | Intent | Card BusinessMap | `intent.md` | Product Owner faz merge do PR |
+| — | *(externo)* | Card BusinessMap | `intent.md` aprovado | Área negocial + plataforma de agilidade |
 | 02 | Spec | `intent.md` + protótipo Figma | `spec.md` + componentes BBDS mapeados | PO + policy owners resolvem flags |
 | 03 | Plan | `spec.md` + estado atual do repo | `plan.md` | Engenheiro commita explicitamente |
 | 04 | Build | `plan.md` | Código + testes | CI green (testes + lint + evals) |
@@ -125,7 +153,7 @@ Uma skill é um arquivo Markdown (formato SKILL.md) com documentação curada ou
 | Confiabilidade | Pode estar desatualizado | Versionado em git, auditável |
 | Para o agente | Não acessível | O conteúdo exato que o agente recebe |
 
-Skills são o mecanismo que transforma "o Copilot conhece React Native em geral" em "o Copilot conhece os padrões específicos desta plataforma e desta versão do BBDS".
+Skills são o mecanismo correto para **qualidade de contexto** — determinísticas, auditáveis, testáveis em evals. O problema que ainda está em aberto é a **distribuição** desse conteúdo para muitos repositórios mantidos por equipes descentralizadas: skills como arquivos em cada repo dependem de ação voluntária de cada time, o que cria configuration drift sem enforcement centralizado. Essa questão está documentada em [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
 
 ---
 
@@ -135,17 +163,19 @@ Os agentes são tão bons quanto o contexto que recebem. Antes dos agentes entra
 
 ### Fase 0 — Conhecimento de Plataforma
 
-O conhecimento de plataforma — padrões de bundle, anti-patterns, convenções — existe hoje de forma dispersa. A Fase 0 o formaliza em skills versionadas.
+O conhecimento de plataforma — padrões de bundle, anti-patterns, convenções — existe hoje de forma dispersa. A Fase 0 o formaliza em conhecimento estruturado e acessível aos agentes.
 
-Cada repo recebe um `copilot-instructions.md` com contexto fundamental: estrutura do bundle, comandos de build/test/lint, allowlist de dependências aprovadas, referências às skills disponíveis. Esse arquivo é o "README para o agente" — o que qualquer engenheiro novo precisaria saber, formalizado em uma instrução permanente.
+Cada repo recebe um `copilot-instructions.md` com contexto fundamental: estrutura do bundle, comandos de build/test/lint, allowlist de dependências aprovadas, referências ao conhecimento disponível. Esse arquivo é o "README para o agente" — o que qualquer engenheiro novo precisaria saber, formalizado em uma instrução permanente.
 
-Skills criadas na Fase 0:
+Conhecimento criado na Fase 0:
 - `platform-standards` — convenções de código, arquitetura de bundle, anti-patterns documentados
 - `security` — OWASP React Native, secure storage, cert pinning, padrões de autenticação
 
 **Por que a Fase 0 é bloqueante?** Um agente sem contexto de plataforma gera código que viola padrões internos — e o review humano precisa capturar esses problemas básicos, cancelando o ganho de velocidade. A Fase 0 é o investimento que torna os agentes subsequentes úteis.
 
 **Bootstrap progressivo:** Repos com maior volume de mudanças têm prioridade. O objetivo é ter o nível mínimo em todos os repos ativos em 60 dias.
+
+> **⚠️ Decisão em aberto:** o mecanismo de **distribuição** desse conhecimento para muitos repos descentralizados ainda está sendo decidido. Skills por repo, MCP server centralizado, e pacote npm versionado são as principais alternativas. A decisão bloqueia a entrada da Fase 0 em produção. Ver [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
 
 ### Fase 0b — Conhecimento BBDS
 
@@ -168,7 +198,7 @@ Isso não é burocracia adicional — é o fluxo de trabalho atual formalizado:
 
 | Gate | Quem aprova | Mecanismo | O que o humano verifica |
 |---|---|---|---|
-| `intent.md` | Product Owner | Merge do PR no GitHub | O problema certo está sendo resolvido? A prioridade está correta? |
+| `intent.md` | **Área negocial + plataforma de agilidade** *(fora do escopo mobile)* | Processo da plataforma de agilidade | O problema certo está sendo resolvido? A prioridade está correta? |
 | `spec.md` | PO + policy owners | Merge após flags 🔴 resolvidas | Requisitos corretos? Flags de compliance endereçadas pelos donos das políticas? |
 | `plan.md` | Engenheiro responsável | Commit explícito | A estratégia de implementação é viável? Os riscos foram identificados? |
 | Código | CI green | Automático (sem humano) | Testes passam, lint ok, evals ok — verificação determinística |
@@ -240,6 +270,7 @@ sdlc-agentico/
 └── docs/                           # esta documentação
     ├── architecture.md
     ├── decisions.md
+    ├── knowledge-governance.md     # ⚠️ DECISÃO ABERTA: distribuição de conhecimento em escala para equipes descentralizadas
     └── agents/                     # documentação detalhada de cada agente
         ├── 01-intent.md
         ├── 02-spec.md
@@ -254,9 +285,10 @@ Se você está chegando agora, a sequência recomendada:
 
 | Etapa | Documento | O que você vai encontrar |
 |---|---|---|
-| 1 | [`docs/architecture.md`](docs/architecture.md) | Como as entidades se conectam — sistemas externos, skills, cadeia de artefatos, monitoramento |
-| 2 | [`docs/decisions.md`](docs/decisions.md) | Por que cada decisão foi tomada — contexto, alternativas, justificativa |
-| 3 | `docs/agents/` | Especificação detalhada de cada agente: fluxo completo, inputs/outputs com schema, evals, governança, métricas |
-| 4 | [`plan.md`](plan.md) | Plano de implementação técnico completo (fonte da verdade para execução) |
+| 1 | [`docs/knowledge-governance.md`](docs/knowledge-governance.md) | ⚠️ Leia antes: o problema de distribuição de conhecimento em escala para equipes descentralizadas e as alternativas em análise |
+| 2 | [`docs/architecture.md`](docs/architecture.md) | Como as entidades se conectam — sistemas externos, skills, cadeia de artefatos, monitoramento |
+| 3 | [`docs/decisions.md`](docs/decisions.md) | Por que cada decisão foi tomada — contexto, alternativas, justificativa |
+| 4 | `docs/agents/` | Especificação detalhada de cada agente: fluxo completo, inputs/outputs com schema, evals, governança, métricas |
+| 5 | [`plan.md`](plan.md) | Plano de implementação técnico completo (fonte da verdade para execução) |
 
 Para quem quer entender a referência conceitual da qual esta proposta foi derivada: [AI-native SDLC Playbook — Anthropic](https://claude.com/blog/the-ai-native-sdlc-playbook).

@@ -7,7 +7,7 @@ Este documento descreve como as peças do sistema se conectam: quais sistemas ex
 A arquitetura tem três camadas que operam simultaneamente:
 
 - **Pipeline SDLC** — a cadeia de 7 artefatos (intent.md → spec.md → plan.md → código → PR → produção) produzida pelos agentes
-- **Infraestrutura de Conhecimento** — skills e instruções que dão contexto especializado a cada agente no momento certo
+- **Infraestrutura de Conhecimento** — skills e instruções que dão contexto especializado a cada agente no momento certo. **⚠️ O mecanismo de distribuição desse conhecimento para muitos repos descentralizados está em aberto** — ver [`knowledge-governance.md`](knowledge-governance.md)
 - **Camada de Monitoramento** — detecta problemas em produção e alimenta o pipeline de volta, fechando o loop
 
 ---
@@ -25,7 +25,7 @@ flowchart TB
         JM([Journey Monitor])
     end
 
-    subgraph KNOW["Infraestrutura de Conhecimento — Skills"]
+    subgraph KNOW["Infraestrutura de Conhecimento ⚠️ distribuição em aberto"]
         direction LR
         CI_INS[copilot-instructions.md]
         PS[platform-standards]
@@ -64,7 +64,7 @@ flowchart TB
 ### Como ler o diagrama
 
 - **Sistemas Externos (topo)**: ferramentas que a organização já usa — não são criadas para esta esteira, apenas integradas
-- **Infraestrutura de Conhecimento (esquerda)**: os arquivos que ensinam os agentes sobre os padrões específicos da plataforma
+- **Infraestrutura de Conhecimento (esquerda)**: o conhecimento que especializa os agentes nos padrões da plataforma. O diagrama mostra skills como mecanismo, mas o **mecanismo de distribuição para muitos repos descentralizados está em aberto** — pode ser MCP server centralizado, pacote npm, ou híbrido. Ver [`knowledge-governance.md`](knowledge-governance.md)
 - **Pipeline SDLC (centro)**: a cadeia de artefatos — o caminho de uma ideia até código em produção
 - **Monitoramento + Correlação (baixo)**: o que acontece após o deploy — o loop de retorno
 - **Setas sólidas (→)**: dados que fluem ativamente entre os componentes
@@ -145,6 +145,14 @@ A granularidade até o `screen_id` é o diferencial crítico: ela permite cruzar
 
 Skills são o mecanismo central para dar contexto especializado aos agentes. Sem skills, o Copilot tem conhecimento geral de React Native — mas não conhece os padrões específicos desta plataforma, esta versão do BBDS, ou estas regras de segurança.
 
+> **⚠️ Decisão em aberto:** o diagrama acima mostra skills como mecanismo de entrega
+> de conhecimento. Essa arquitetura é adequada para **qualidade do contexto** (determinismo,
+> auditabilidade, evals), mas o modelo de skills por repo apresenta um problema de
+> **distribuição** para muitas equipes descentralizadas. O mecanismo exato de como o
+> conhecimento chega a cada repo ainda está sendo decidido — pode ser MCP server
+> centralizado (modelo Stripe), pacote npm versionado (modelo Shopify), ou híbrido.
+> Ver [`docs/knowledge-governance.md`](knowledge-governance.md) para a análise completa.
+
 ### O que é uma skill e como é carregada
 
 Uma skill é um arquivo Markdown no formato SKILL.md, armazenado em `.github/skills/` no repositório. Cada skill tem um campo `description` que é a chave do carregamento dinâmico:
@@ -204,21 +212,28 @@ Cada artefato é um arquivo Markdown versionado em git. Nenhum estágio começa 
 O que cada artefato contém, o que cada gate de aprovação significa, e o que seria diferente sem ele:
 
 ```
-BusinessMap card
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FORA DO ESCOPO DA ESTEIRA MOBILE
+  Área Negocial + Plataforma de Agilidade
+    BusinessMap card → refinamento → aprovação
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     │
-    │  [Agente 01 lê via BusinessMap MCP]
+    │  [Entregue com status: approved]
     ▼
-intent.md ──── O QUÊ e o POR QUÊ.
+intent.md ──── O QUÊ e o POR QUÊ.  [INPUT EXTERNO — schema em templates/intent.md]
                Problema em linguagem de negócio: outcome esperado para o usuário,
                usuários afetados, métricas de sucesso esperadas, constraints já
                conhecidas (técnicas ou de negócio), perguntas abertas que precisam
                de resposta antes de implementar.
                NÃO contém: como implementar, quais componentes usar.
     │
-    │  Gate: Product Owner faz merge do PR
+    │  Gate: Área negocial + plataforma de agilidade (processo externo)
     │  Pergunta: "Este é o problema certo a resolver? A prioridade está correta?
     │             O outcome esperado faz sentido?"
-    │  Sem esse gate: implementar a solução errada para o problema errado.
+    │  Workflow intent-to-spec.yml valida o schema ao entrar na esteira.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INÍCIO DO ESCOPO DA ESTEIRA MOBILE (Agente 02)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     ▼
 spec.md ─────── O QUÊ detalhado.
                 Requisitos funcionais (o que o sistema deve fazer) e não-funcionais

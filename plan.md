@@ -76,13 +76,7 @@ sdlc-agentico/
 │   └── copilot-instructions.md          # Template base para repos de equipe
 │
 ├── agents/
-│   ├── 01-intent/                       # Stage 1: Plan
-│   │   ├── README.md
-│   │   ├── prompt.md                    # Instruções do agente (persona + contexto)
-│   │   └── evals/
-│   │       ├── tasks/                   # 20-50 tasks de teste
-│   │       └── graders/                 # Lógica de avaliação
-│   ├── 02-spec/                         # Stage 2: Design
+│   ├── 02-spec/                         # Stage 2: Design  (início do escopo mobile)
 │   ├── 03-plan/                         # Stage 3a: Planning
 │   ├── 04-build/                        # Stage 3b: Build
 │   ├── 05-test/                         # Stage 4: Test
@@ -108,7 +102,8 @@ sdlc-agentico/
     ├── onboarding.md                    # Como uma equipe adota a esteira
     ├── governance.md                    # Cadeia de aprovação e audit trail
     ├── measurement.md                   # KPIs por stage
-    └── legacy-repos.md                  # Como migrar repos existentes
+    ├── legacy-repos.md                  # Como migrar repos existentes
+    └── knowledge-governance.md         # ⚠️ DECISÃO ABERTA: distribuição de conhecimento em escala para equipes descentralizadas
 ```
 
 ---
@@ -118,6 +113,14 @@ sdlc-agentico/
 **Por quê primeiro:** Sem o conhecimento de plataforma formalizado, todos os agentes
 posteriores operam sem contexto — geram código que viola padrões internos.
 Este é o maior gargalo atual e deve ser endereçado antes de qualquer outro stage.
+
+> **⚠️ Decisão de Arquitetura em Aberto:** o mecanismo de **distribuição** desse
+> conhecimento para muitos repos descentralizados ainda está em análise. O plano atual usa Skills (SKILL.md)
+> por repo, mas esse modelo apresenta um problema de governança em escala: times
+> descentralizados controlam seus próprios repos, o que cria configuration drift sem
+> enforcement centralizado. Antes desta fase entrar em produção, a arquitetura de
+> distribuição precisa ser decidida. Ver análise completa em
+> [`docs/knowledge-governance.md`](knowledge-governance.md).
 
 ### O que fazer
 
@@ -136,7 +139,8 @@ Este é o maior gargalo atual e deve ser endereçado antes de qualquer outro sta
 
 4. **Validação e versionamento**: A equipe de plataforma revisa e aprova
    `platform-standards-draft.md` via PR. Esse arquivo se torna a fonte de verdade para
-   a skill em `.github/skills/platform-standards/SKILL.md`.
+   o mecanismo de distribuição escolhido (skill, pacote npm, ou MCP server — ver
+   [`docs/knowledge-governance.md`](knowledge-governance.md)).
 
 5. **Bootstrap por repo**: Script/workflow que copia o template de
    `copilot-instructions.md`, injeta o contexto de plataforma, e usa Copilot (plan mode
@@ -145,7 +149,8 @@ Este é o maior gargalo atual e deve ser endereçado antes de qualquer outro sta
 
 ### Artefatos resultantes
 - `platform-knowledge/platform-standards-draft.md` (aprovado pela equipe de plataforma)
-- `.github/skills/platform-standards/SKILL.md` (skill operacional, compatível com Copilot e Claude Code)
+- Mecanismo de distribuição **a definir** — skill local, MCP server centralizado, ou pacote npm
+  (ver [`docs/knowledge-governance.md`](knowledge-governance.md))
 - `templates/copilot-instructions.md` (template base para todos os repos de equipe)
 
 ---
@@ -258,50 +263,90 @@ A skill existente `figma-to-code` deve ser aprimorada para:
 
 ---
 
-## Os 7 Agentes da Esteira
+## Os 6 Agentes da Esteira (Agentes 02–07)
 
-### Agente 01 — Intent Agent (Stage 1: Plan)
+> **Escopo da plataforma mobile:** a criação do `intent.md` é responsabilidade da **área negocial em conjunto com a plataforma de agilidade** — não faz parte desta esteira. A esteira da plataforma mobile começa no **Agente 02 (Spec)**, recebendo o `intent.md` como input já aprovado.
+>
+> O template e schema completo do `intent.md` — incluindo a integração com BusinessMap MCP — estão documentados em [`docs/agents/01-intent.md`](../docs/agents/01-intent.md) como referência para a plataforma de agilidade. Este documento define o **contrato de interface** esperado pela esteira.
 
-**O que muda:** Ideias saem do BusinessMap como artefato estruturado em minutos,
-não dias de alinhamento em reuniões.
+---
 
-**Ferramenta**: Copilot Chat + BusinessMap MCP (VS Code agent mode)
+### intent.md — Schema de Input da Esteira (Contrato de Interface)
 
-**Input**: URL/ID do card no BusinessMap
+O `intent.md` é o artefato que a plataforma de agilidade/área negocial entrega para a esteira mobile. O Agente 02 (Spec) **exige** que os seguintes campos estejam presentes e preenchidos — o workflow `intent-to-spec.yml` valida o schema antes de permitir a geração da spec.
 
-**Output**: `intent.md` com: problema, outcome esperado, usuários afetados,
-sistemas envolvidos, constraints, perguntas abertas, autor e timestamp.
+#### Frontmatter obrigatório
 
-**Fluxo concreto:**
-1. Product Owner abre Copilot Chat no VS Code com BusinessMap MCP ativo
-2. Prompt: `"Converta o card #[ID] do BusinessMap em um intent.md seguindo nosso template"`
-3. Copilot chama o MCP, busca dados do card
-4. Gera `intent.md` usando `templates/intent.md`
-5. PO revisa, corrige, commita no repo do produto ou em repo de intents centralizado
-6. Aprovação: merge = aceito; PR fechado sem merge = rejeitado
+```yaml
+---
+id: [ID do card no sistema de backlog — ex: BM-1234]
+source: businessmap | manual
+created_by: [nome do autor]
+created_at: [timestamp ISO 8601 — ex: 2026-09-08T14:00:00-03:00]
+status: approved                # deve estar 'approved' para entrar na esteira
+businessmap_url: [URL do card]  # rastreabilidade bidirecional
+---
+```
 
-**Integração BusinessMap:**
-- Fonte de verdade: BusinessMap (card permanece como authoritative)
-- `intent.md` é cópia de trabalho vinculada ao card via link no frontmatter
-- Commit no `intent.md` atualiza o card no BusinessMap via MCP (write-back)
+#### Seções obrigatórias
 
-**Evals do Agente 01:**
-- `agents/01-intent/evals/tasks/`: 20-50 cards reais com intent.md esperado como ground truth
-- Graders (code-based):
-  - Todos os campos obrigatórios presentes? (regex/schema check)
-  - Link para o card BusinessMap presente e válido?
-  - Timestamp e autor preenchidos?
-- Graders (model-based):
-  - O problema declarado corresponde ao problema do card? (rubrica 1-5)
-  - Os critérios de sucesso são mensuráveis?
-  - As perguntas abertas são relevantes e não triviais?
-- Métricas: pass@1 (geração única deve passar)
+| Seção | O que deve conter | Por que é necessário |
+|---|---|---|
+| `## Problema` | Descrição clara do problema — o QUÊ e POR QUÊ. O outcome esperado para o usuário/negócio. | O Agente 02 usa para derivar os requisitos funcionais |
+| `## Usuários Afetados` | Quem experimenta o problema (persona, segmento, volume). | Informa decisões de UX e criticidade |
+| `## Outcome Esperado` | O que muda quando o problema for resolvido. **Deve ser mensurável.** | Base para critérios de aceitação da spec |
+| `## Constraints Conhecidas` | Limitações técnicas, de negócio, regulatórias ou de prazo. | Previne spec que viola constraints já conhecidas |
+| `## Perguntas Abertas` | Dúvidas que precisam ser respondidas antes da especificação. Status: aberta/respondida. | Perguntas em aberto são flags que o Agente 02 escalona |
 
-**Governança:** PO aprova via merge do PR. Versão do template de intent registrada.
+#### Seções opcionais (enriquecem a spec resultante)
 
-**Medição:**
-- Leading: Tempo do primeiro card → intent.md commitado (target: <4h)
-- Lagging: Taxa de intent.md aceitos sem revisões maiores após o spec stage
+| Seção | Conteúdo |
+|---|---|
+| `## Figma` | Link para protótipo ou referência visual, se existir |
+| `## Sistemas Envolvidos` | APIs, microserviços, outros bundles que serão afetados |
+| `## Histórico` | Tentativas anteriores de resolver o mesmo problema |
+
+#### Exemplo mínimo válido
+
+```markdown
+---
+id: BM-4521
+source: businessmap
+created_by: Ana Costa
+created_at: 2026-09-05T10:30:00-03:00
+status: approved
+businessmap_url: https://businessmap.io/cards/4521
+---
+
+## Problema
+Usuários do segmento PJ não conseguem completar a portabilidade de salário quando
+há mais de uma conta ativa. O fluxo atual não permite selecionar qual conta é a
+de destino, resultando em abandono antes da confirmação (taxa: 38%).
+
+## Usuários Afetados
+Clientes PJ com conta corrente ativa — aproximadamente 12.000 usuários/mês
+tentam este fluxo.
+
+## Outcome Esperado
+Taxa de conclusão do fluxo de portabilidade PJ sobe de 62% para >85% em 60 dias
+após o deploy.
+
+## Constraints Conhecidas
+- API de portabilidade (v2) suporta múltiplas contas — apenas o app não expõe
+- Prazo: incluir na release de outubro (cutoff: 25/09)
+
+## Perguntas Abertas
+- [ ] O limite de contas exibidas na seleção tem um máximo? (aguardando backend)
+- [x] A nova tela precisa de revisão jurídica? → Confirmado: não precisa (09/09)
+```
+
+#### Validação automática (`intent-to-spec.yml`)
+
+O workflow valida o schema antes de permitir a geração da spec:
+- Todos os campos do frontmatter obrigatório presentes?
+- `status: approved` (bloqueante — intent em rascunho não entra na esteira)?
+- Seções obrigatórias presentes e não vazias?
+- Perguntas abertas sem resposta → sinaliza como warning, não bloqueante (o Agente 02 registra como flags)
 
 ---
 
@@ -828,7 +873,8 @@ sem necessidade de referência explícita no prompt. Escrever a `description` co
 ## Governança — Cadeia de Aprovação
 
 ```
-intent.md  →  [Product Owner: merge PR]
+intent.md  →  [Área Negocial + Plataforma de Agilidade: aprovado externamente]
+               ↳ fora do escopo da esteira mobile — schema em templates/intent.md
     ↓
 spec.md    →  [Product Owner: merge PR] + [Policy owners: flags resolvidas]
     ↓
@@ -853,8 +899,8 @@ Incidente  →  [intent.md automático] + [On-call: triagem]
 
 | Stage | Leading Indicator | Target | Lagging Indicator | Target |
 |---|---|---|---|---|
-| 1 Plan | Tempo card → intent.md | <4h | Taxa intent aceitos sem rework | >85% |
-| 2 Design | Tempo intent → spec | <1 dia | Rework de spec após build | <10% |
+| Input | Taxa de intent.md com schema válido (validado pelo workflow) | >95% | Taxa de intent.md que chegam com perguntas abertas sem resposta | <20% |
+| 2 Design | Tempo intent aprovado → spec | <1 dia | Rework de spec após build | <10% |
 | 3 Build | % PRs com plan.md | 100% | Divergência plan vs. diff | <20% |
 | 4 Test | Eval pass rate | >85% | Regressões em CI vs. prod | >90% em CI |
 | 5 Deploy | Tempo ao primeiro review | <15min | Defect catch pre-merge | >80% |
@@ -865,8 +911,8 @@ Incidente  →  [intent.md automático] + [On-call: triagem]
 ## Verificação — Como saber se funcionou
 
 ### Por stage:
-1. **Intent**: Abrir card real no BusinessMap, gerar intent.md, verificar campos e link
-2. **Spec**: Partir de um intent.md existente, gerar spec.md, checar flags e compliance
+1. **Input (intent.md)**: Usar um intent.md real já aprovado pela área negocial; validar que o workflow `intent-to-spec.yml` aceita o schema sem erro
+2. **Spec**: Partir do intent.md validado, gerar spec.md, checar flags e compliance
 3. **Plan**: Gerar plan.md para uma spec real, verificar arquivos listados existem no repo
 4. **Build**: Implementar plan.md, rodar `npm test`, checar CI green first-pass
 5. **Test**: Fazer mudança intencional que quebra padrão → eval suite captura?
@@ -889,7 +935,7 @@ Semana 2-3:  Fase 0b — Arquitetura de conhecimento BBDS
                → bbds-api-reference.md gerado + bbds-ux-guidelines.yaml (UX)
                → três skills BBDS ativas + figma-to-code aprimorada
                → evals Fase 0b validados
-Semana 3-4:  Templates + Agente 01 (Intent) + evals iniciais
+Semana 3-4:  Templates + definição de schema do intent.md (contrato com plataforma de agilidade)
 Semana 4-5:  Agente 02 (Spec) + skills de policy (security + platform-standards + BBDS)
 Semana 5-6:  Agente 03 (Plan) + GitHub Actions de enforcement + copilot-instructions base
 Semana 6-7:  Agente 04 (Build) + feedback loop + figma-to-code integrado
@@ -904,17 +950,23 @@ Fase 2 TBD:  Skills de branding, compliance, ux (criação com policy owners)
 
 ## Decisões Abertas / Próximos Passos
 
-1. **CI/CD híbrido**: Identificar qual parte do pipeline usa GitHub Actions vs. outro sistema
+1. **Arquitetura de distribuição de conhecimento** ⚠️ (bloqueia Fase 0):
+   Decidir entre MCP server centralizado (modelo Stripe), pacote npm versionado
+   (modelo Shopify), ContextOps com push automático, ou combinação desses modelos.
+   Ver análise completa em [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
+   Participantes: time de plataforma + arquitetura + segurança.
+
+2. **CI/CD híbrido**: Identificar qual parte do pipeline usa GitHub Actions vs. outro sistema
    para mapear onde cada workflow vai rodar.
 
-2. **Eval runner**: Confirmar que GitHub Actions tem acesso à Copilot API em modo
+3. **Eval runner**: Confirmar que GitHub Actions tem acesso à Copilot API em modo
    non-interactive para rodar evals automatizados.
 
-3. **BusinessMap write-back**: Confirmar se o MCP do BusinessMap suporta write
+4. **BusinessMap write-back**: Confirmar se o MCP do BusinessMap suporta write
    (atualizar card com link para intent.md) além de read.
 
-4. **Figma — longo prazo**: Quando licenças dev mode estiverem disponíveis em escala,
+5. **Figma — longo prazo**: Quando licenças dev mode estiverem disponíveis em escala,
    adicionar Figma MCP ao Agente 02 (Spec) para puxar specs diretamente.
 
-5. **Skills — Fase 2**: Agendar sessões de trabalho com policy owners (branding,
+6. **Skills — Fase 2**: Agendar sessões de trabalho com policy owners (branding,
    security, compliance, UX) para criar as 4 skills pendentes.

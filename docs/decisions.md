@@ -47,21 +47,33 @@ GitHub Copilot Enterprise é o runtime exclusivo de todos os agentes da esteira.
 
 ---
 
-## ADR-002 — Skills ao invés de RAG para Conhecimento de Domínio
+## ADR-002 — Injeção Determinística de Conhecimento em vez de RAG
+
+**Escopo desta ADR:** decide o **princípio de qualidade** do conhecimento injetado nos agentes — determinístico e curado vs. recuperação probabilística (RAG). Não decide o formato concreto (SKILL.md, endpoint MCP, pacote npm) nem o mecanismo de distribuição — ambos são consequência da decisão em aberto em [ADR-009](#adr-009--arquitetura-de-distribuição-de-conhecimento-decisão-em-aberto).
 
 ### Contexto
 
 Os agentes precisam de contexto de domínio: padrões de plataforma, API do design system, guidelines de UX, regras de segurança. Esse conhecimento existe hoje de forma dispersa e inacessível — em Confluence, em PRs antigos, na memória de engenheiros sênior.
 
-Há duas abordagens arquiteturais para entregar esse conhecimento a um agente:
+Há duas abordagens arquiteturais para injetar esse conhecimento em um agente:
 
-**Opção A — RAG (Retrieval-Augmented Generation):** construir um sistema que indexa toda a documentação disponível em um banco de dados de vetores (embeddings), e recupera os fragmentos mais relevantes a cada consulta do agente. O agente faz uma pergunta; o sistema busca os chunks mais próximos semanticamente e os inclui no contexto.
+**Opção A — RAG (Retrieval-Augmented Generation):** indexar toda a documentação disponível em um banco de dados de vetores e recuperar os fragmentos mais relevantes a cada consulta. O agente faz uma pergunta; o sistema busca os chunks mais próximos semanticamente e os inclui no contexto.
 
-**Opção B — Skills (documentação curada + carregamento dinâmico):** escrever documentação curada e específica para cada domínio de conhecimento (API do BBDS, padrões de segurança, etc.), armazená-la em arquivos Markdown versionados, e carregar dinamicamente os arquivos relevantes com base no contexto da sessão.
+**Opção B — Injeção determinística de conhecimento curado:** escrever documentação curada por domínio (API do BBDS, padrões de segurança, etc.), versionada e com curadoria humana ou auto-geração, e injetá-la nos agentes de forma previsível e completa — sem retrieval probabilístico. O formato concreto (arquivo SKILL.md por repo, endpoint de MCP server central, pacote versionado) depende da arquitetura de distribuição escolhida.
 
 ### Decisão
 
-O conhecimento de domínio é entregue via Skills (SKILL.md) carregadas dinamicamente — não via RAG sobre documentações.
+O conhecimento de domínio é injetado nos agentes de forma **determinística e curada** — não via RAG sobre documentações indexadas.
+
+Esta decisão se aplica independentemente do formato ou mecanismo de entrega. Nas três alternativas de distribuição avaliadas em [ADR-009](#adr-009--arquitetura-de-distribuição-de-conhecimento-decisão-em-aberto), o princípio se mantém:
+
+| Alternativa de distribuição | Como o determinismo se manifesta |
+|---|---|
+| MCP server central (Stripe model) | Endpoints estruturados servidos de forma previsível — nenhum retrieval semântico |
+| Pacote npm versionado (Shopify model) | SKILL.md bundled em pacote — versão pinada, conteúdo sempre o mesmo |
+| Arquivos per-repo (modelo padrão Copilot) | SKILL.md em cada repositório — carregado inteiro, sem retrieval |
+
+O **formato concreto** (SKILL.md, MCP endpoint, pacote) **não está decidido aqui** — é consequência da arquitetura de distribuição definida em ADR-009.
 
 ### Justificativa
 
@@ -69,33 +81,37 @@ O conhecimento de domínio é entregue via Skills (SKILL.md) carregadas dinamica
 
 RAG depende de recuperação probabilística — o chunk certo pode não ser retornado dependendo de como a consulta foi formulada ou como os embeddings foram indexados. Para contexto de segurança e compliance ("quais dados não podem ser logados?"), "às vezes carrega a regra certa" não é aceitável. Um agente que segue inconsistentemente as regras de segurança é mais perigoso do que um que as segue de forma previsível.
 
-RAG também requer infraestrutura adicional que não existe hoje: um banco de dados de vetores, um pipeline de embedding com curadoria da qualidade dos chunks, tuning contínuo de retrieval, e monitoramento de qualidade. Isso é um investimento de infraestrutura significativo antes de qualquer agente rodar.
+RAG também requer infraestrutura adicional que não existe hoje: banco de dados de vetores, pipeline de embedding com curadoria de qualidade dos chunks, tuning contínuo de retrieval e monitoramento de qualidade. Isso é investimento significativo antes de qualquer agente rodar.
 
-**Skills são determinísticas e auditáveis:**
+**Injeção determinística é auditável e testável em evals:**
 
-O conteúdo exato que o agente recebe é conhecido — é o arquivo SKILL.md versionado em git. Mudanças no conteúdo da skill passam por PR com aprovação do policy owner (para segurança e compliance) — há uma trilha de auditoria completa de quem aprovou cada mudança e quando. O Copilot carrega a skill inteira quando o contexto se encaixa na `description` — sem retrieval parcial ou chunk incorreto.
+Com injeção determinística, o conteúdo exato que o agente recebe em cada situação é conhecido e estável. Mudanças no conhecimento passam por PR com aprovação do policy owner (para segurança e compliance) — há trilha de auditoria completa. Mais criticamente: **evals são reproduzíveis**. Um eval que testa se o agente aplica a regra de segurança X pode ser executado de forma idêntica em qualquer momento porque o contexto injetado não muda entre execuções. Com RAG, o contexto varia a cada run e os evals perdem confiabilidade.
 
-**O volume de conhecimento é adequado para skills:**
+**O volume de conhecimento de plataforma não justifica RAG:**
 
-O conhecimento de plataforma não é petabytes de documentação geral — é um conjunto bem delimitado de padrões específicos: a API de ~50-100 componentes BBDS, padrões de segurança para mobile, convenções de 10-15 bundles. Esse volume cabe em arquivos Markdown de tamanho razoável. RAG seria overhead de infraestrutura para um problema que uma skill resolve completamente.
+O conhecimento de plataforma é um conjunto bem delimitado de padrões específicos: a API de ~50-100 componentes BBDS, padrões de segurança para mobile, convenções de alguns bundles. Esse volume cabe em documentação curada de tamanho razoável. RAG seria overhead de infraestrutura para um problema que injeção direta resolve.
 
-**Auto-geração resolve o drift de documentação:**
+**Auto-geração resolve o drift de documentação sem RAG:**
 
-O problema que RAG sobre Confluence teria é que a documentação manual fica desatualizada. Skills curadas têm o mesmo problema para alguns domínios (como a API do BBDS). A solução não é RAG — é auto-geração: a skill `bbds-api` é gerada via ts-morph a partir dos TypeScript types do BBDS. Nunca fica desatualizada porque não é escrita por humanos.
+O argumento para RAG costuma ser que documentação manual fica desatualizada. A resposta não é RAG — é auto-geração: a documentação da API do BBDS pode ser gerada via ts-morph a partir dos TypeScript types, nunca ficando desatualizada porque não depende de escrita manual.
 
-### Alternativas Consideradas
+### Alternativas de Formato Consideradas
 
-**RAG sobre Confluence/Notion:** Depende da qualidade da documentação existente (baixa e desatualizada). Adiciona infraestrutura de embedding + retrieval que não existe. E o problema de lag de documentação manual persiste.
+As alternativas abaixo foram descartadas para o problema de conhecimento de plataforma curado. Para outros casos de uso (ex: busca em grandes corpora não-estruturados), podem ser válidas:
 
-**Few-shot examples no prompt:** Funciona para padrões simples e estáticos, mas não escala para o volume de conhecimento necessário. Não é versionável separadamente do prompt principal.
+**RAG sobre Confluence/Notion:** Depende da qualidade da documentação existente (baixa e desatualizada). Adiciona infraestrutura de embedding + retrieval. O problema de lag de documentação manual persiste. Evals não são reproduzíveis.
 
-**Fine-tuning:** Caro, requer dados de treinamento que não existem na organização, e o conhecimento fica "congelado" no modelo — cada mudança de padrão no BBDS ou na plataforma exigiria re-treinamento. Inviável para um ambiente com releases frequentes.
+**Few-shot examples no prompt:** Funciona para padrões simples e estáticos, mas não escala. Não é versionável separadamente do prompt principal.
+
+**Fine-tuning:** Caro, requer dados de treinamento que não existem, e o conhecimento fica "congelado" no modelo — cada mudança de padrão exigiria re-treinamento. Inviável para ambiente com releases frequentes.
 
 ### Consequências
 
-- Skills precisam ser mantidas — para domínios estáticos (segurança, padrões de plataforma), curadoria humana é necessária; para domínios dinâmicos (API do BBDS), auto-geração em CI resolve
-- O conteúdo que o agente recebe é auditável e testável em evals — qualquer comportamento inesperado pode ser rastreado até uma skill específica
-- Novos domínios de conhecimento (ex: compliance regulatório) requerem criação de novas skills com aprovação dos policy owners — o processo é deliberado, não automático
+- O conhecimento de plataforma precisa ser **curado ativamente** — para domínios estáticos (segurança, padrões), curadoria humana via PR; para domínios dinâmicos (API do BBDS), auto-geração em CI
+- O conteúdo injetado é auditável: qualquer comportamento inesperado do agente pode ser rastreado até o conhecimento que recebeu em uma sessão específica
+- Evals são determinísticos e reproduzíveis — o mesmo input produz o mesmo contexto injetado em qualquer run
+- Novos domínios de conhecimento requerem curadoria deliberada com aprovação do policy owner — não acontece automaticamente
+- **O formato concreto e o mecanismo de distribuição estão em aberto** — decididos em [ADR-009](#adr-009--arquitetura-de-distribuição-de-conhecimento-decisão-em-aberto) e detalhados em [`docs/knowledge-governance.md`](knowledge-governance.md)
 
 ---
 
@@ -416,3 +432,103 @@ Deploy para produção requer aprovação explícita do release manager via GitH
 - O pipeline tem latência em cada gate — o tempo de aprovação humana é variável e não controlável pela esteira
 - Gates explícitos criam registro de quem aprovou o quê e quando — trilha de auditoria completa para incidentes
 - A autonomia pode aumentar gradualmente conforme confiança é construída — o design permite isso sem mudar a arquitetura
+
+---
+
+## ADR-009 — Arquitetura de Distribuição de Conhecimento (DECISÃO EM ABERTO)
+
+### Contexto
+
+A esteira precisa distribuir conhecimento de plataforma — padrões de código, API do BBDS, guidelines de UX, regras de segurança — para agentes que rodam em muitos repositórios, cada um mantido por equipes de produto autônomas.
+
+O plano original (Fase 0) previa Skills (SKILL.md) como mecanismo de distribuição. Essa abordagem é adequada para qualidade e determinismo do contexto (ver [ADR-002](#adr-002--skills-ao-invés-de-rag-para-conhecimento-de-domínio)), mas apresenta um problema estrutural de distribuição em escala:
+
+- Skills são arquivos em repos; cada time decide quando instalar e atualizar
+- Sem enforcement centralizado, repos acumulam versões diferentes do mesmo padrão (configuration drift)
+- A [GitHub Discussion #179641](https://github.com/orgs/community/discussions/179641) confirma que o Copilot Enterprise não tem solução nativa para este problema em multi-repo
+
+A análise completa das alternativas está em [`docs/knowledge-governance.md`](knowledge-governance.md).
+
+### Alternativas em análise
+
+**A — Org-level Copilot Instructions** (disponível agora, zero infraestrutura):
+Regras não-negociáveis configuradas pelo admin da org, aplicadas a todos os repos automaticamente. Resolve o problema para conteúdo limitado; não suporta skills ricas como a API completa do BBDS.
+
+**B — MCP Server Centralizado** (modelo Stripe):
+Servidor que expõe conhecimento via endpoints determinísticos (`get_component_api`, `get_standard`). Agentes consultam o servidor em tempo de sessão — nenhuma cópia local em repos. Zero drift. Auditabilidade total via logs. Requer nova infraestrutura.
+
+**C — Pacote npm Versionado** (modelo Shopify):
+Conhecimento empacotado como dependência. Times instalam via `npm install @platform/knowledge-skills`. Dependabot automatiza PRs de update. Drift possível (time pode ignorar Dependabot), mas explícito e rastreável.
+
+**D — ContextOps com Push Automático**:
+GitHub Actions abre PRs em todos os repos a cada atualização de padrão. Dashboard de drift detection mostra quais repos estão desatualizados. Times ainda fazem merge, mas o processo é automatizado até a porta.
+
+### Recomendação preliminar
+
+Para muitas equipes descentralizadas em contexto bancário, a arquitetura híbrida em três camadas é a mais adequada:
+
+1. **Org-level instructions** — regras críticas, enforcement automático, zero infraestrutura
+2. **MCP server central** — conhecimento rico (BBDS, platform standards), zero drift, auditabilidade
+3. **Per-repo copilot-instructions.md** — contexto bundle-específico que o time genuinamente controla
+
+### Decisão
+
+**Não definida.** A escolha da arquitetura requer validação de:
+- Viabilidade de construir e operar o MCP server internamente
+- Aceitação dos times de produto do modelo de consulta centralizada
+- Avaliação de MCP Gateway para auditoria regulatória
+- Estratégia de faseamento (org-level instructions no MVP; MCP server em seguida?)
+
+**Participantes necessários:** time de plataforma, arquitetura, segurança.
+
+---
+
+## ADR-010 — Agente 01 (Intent) fora do Escopo da Esteira Mobile
+
+### Contexto
+
+O ciclo completo de desenvolvimento começa com a identificação e definição formal do problema — o `intent.md`. Em um ciclo AI-native, esse artefato pode ser gerado por um agente que lê o card de backlog (BusinessMap) e o transforma em documento estruturado.
+
+A plataforma mobile opera dentro de uma organização maior que tem uma área negocial e uma plataforma de agilidade dedicadas à gestão de backlog e refinamento de problemas. Essas áreas já têm processo para aprovação de demandas antes de chegarem ao desenvolvimento.
+
+A questão colocada: **a criação do `intent.md` deve ser parte da esteira da plataforma mobile, ou é responsabilidade da área negocial/agilidade?**
+
+### Decisão
+
+A criação e aprovação do `intent.md` é **responsabilidade da área negocial em conjunto com a plataforma de agilidade** — fora do escopo de implementação da esteira mobile.
+
+A esteira mobile começa no **Agente 02 (Spec)**, recebendo o `intent.md` como input já aprovado. A plataforma mobile define o **schema** (contrato de interface) que o `intent.md` deve seguir para ser aceito pela esteira.
+
+### Justificativa
+
+**Separação de responsabilidades organizacional:**
+
+A decisão "qual problema resolver e por quê" pertence à área negocial. Essa decisão envolve priorização estratégica, alinhamento com objetivos de negócio e contexto que vai além do scope técnico da plataforma mobile. Trazer essa decisão para dentro da esteira mobile criaria uma sobreposição de responsabilidades — a plataforma mobile seria responsável por gerar um documento de negócio que outras áreas são as legítimas donas.
+
+**O processo já existe:**
+
+A área negocial e a plataforma de agilidade já têm fluxo de refinamento e aprovação de demandas. Criar um agente que duplica esse processo dentro da esteira mobile seria redundante e poderia criar conflito sobre qual `intent.md` é o autoritativo.
+
+**O schema como contrato suficiente:**
+
+O que a esteira mobile precisa não é controlar como o `intent.md` é criado — precisa garantir que o `intent.md` que chega tenha os campos necessários para o Agente 02 gerar uma spec de qualidade. Isso é resolvido pelo schema (contrato de interface) e pela validação automática no `intent-to-spec.yml`.
+
+**Flexibilidade para a área negocial:**
+
+A área negocial pode usar um agente (como o Agente 01 documentado em `docs/agents/01-intent.md`) para criar o `intent.md` a partir do BusinessMap MCP, ou pode criá-lo manualmente, ou via outra ferramenta — desde que o schema seja seguido. A decisão sobre como criar o `intent.md` é da área negocial.
+
+### Alternativas Consideradas
+
+**Incluir Agente 01 no escopo da plataforma mobile:** A plataforma mobile teria controle sobre o início do pipeline. Mas criaria sobreposição com o processo da área negocial/agilidade, e a plataforma mobile precisaria manter integração com BusinessMap que hoje pertence a outra área.
+
+**Nenhum schema — aceitar qualquer intent.md:** Flexibilidade máxima para a área negocial, mas o Agente 02 receberia inputs inconsistentes e de qualidade variável, gerando specs incompletas ou incorretas.
+
+### Consequências
+
+- A esteira mobile tem um **pré-requisito externo** claro: um `intent.md` aprovado com schema válido
+- O schema (`templates/intent.md`) é o **artefato de integração** entre a área negocial e a plataforma mobile — precisa ser acordado e mantido conjuntamente
+- O workflow `intent-to-spec.yml` valida o schema automaticamente, dando feedback imediato quando um `intent.md` não atende o contrato
+- A documentação completa do schema e da integração com BusinessMap MCP está em `docs/agents/01-intent.md` — disponível para a área negocial/agilidade usar como referência ao implementar seu próprio processo de geração de intent
+- Incidentes detectados pelo Agente 07 geram `intent.md` automaticamente — esses passam pela triagem do on-call antes de entrar na fila da área negocial/agilidade para priorização
+
+**Bloqueador:** Fase 0 não entra em produção sem essa decisão — o mecanismo de distribuição precede a criação do conteúdo.
