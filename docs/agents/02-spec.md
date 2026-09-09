@@ -22,6 +22,7 @@ O Copilot carrega as skills relevantes automaticamente — o PO não precisa sab
 - `bbds-api-reference.md` gerado e disponível em `platform-knowledge/`
 - Skills `security` e `platform-standards` publicadas (Fase 0)
 - `templates/spec.md` disponível
+- `templates/api-contract.md` disponível
 
 ---
 
@@ -55,9 +56,21 @@ O Copilot carrega skills com base na `description` no SKILL.md e no contexto do 
 
 Referência manual — o link do arquivo Figma é incluído no frontmatter do `spec.md`. O agente não acessa o Figma diretamente (requer dev mode em escala). O PO informa quais telas do protótipo são relevantes.
 
+### MCP de catálogo de serviços *(quando disponível)*
+
+Quando disponível, o agente consulta o catálogo de serviços de backend para classificar automaticamente cada chamada necessária:
+
+| Classificação | Critério | Resultado |
+|---|---|---|
+| **Reutilizar** | Endpoint existe e atende o caso de uso integralmente | Referenciado no `api-contract.md`, sem contrato novo |
+| **Extensão** | Endpoint existe mas precisa de campos adicionais | Contrato apenas do delta (novos campos/comportamentos) |
+| **Novo** | Não existe | Contrato completo — insumo para o time de backend |
+
+Sem o MCP, a classificação é feita manualmente pelo PO com base no seu conhecimento dos serviços disponíveis.
+
 ---
 
-## Output — `spec.md`
+## Output — `spec.md` + `api-contract.md`
 
 ### Schema completo
 
@@ -140,6 +153,56 @@ skills_used: [security@v1.2, platform-standards@v2.0, bbds-ux-guidelines@v1.5]
 ### Campos obrigatórios para aprovação
 `intent_ref`, `figma_ref`, `skills_used`, todos os RF com critério de aceitação, mapeamento BBDS (se houver UI), seção `## Flags` (pode estar vazia, mas deve existir e todas as flags 🔴 devem estar resolvidas).
 
+### Schema do `api-contract.md`
+
+Co-artefato gerado junto com `spec.md`. Documenta todas as chamadas de backend necessárias para a feature.
+
+```markdown
+---
+title: "[mesmo título do spec.md]"
+spec_ref: "[link ao spec.md]"
+created_at: "YYYY-MM-DD"
+---
+
+## Endpoints
+
+### [Nome do endpoint]
+
+| Campo | Valor |
+|---|---|
+| **Classificação** | `reutilizar` \| `extensão` \| `novo` |
+| **Método** | GET \| POST \| PUT \| PATCH \| DELETE |
+| **Path** | `/api/v1/recurso` |
+| **Serviço existente** | Nome do serviço (se `reutilizar` ou `extensão`) |
+
+#### Request
+
+```json
+{
+  "campo": "tipo e descrição"
+}
+```
+
+#### Response (sucesso)
+
+```json
+{
+  "campo": "tipo e descrição"
+}
+```
+
+#### Notas de contrato
+
+- [Para `extensão`]: delta em relação ao endpoint existente — apenas os campos novos ou comportamentos alterados
+- [Para `novo`]: contrato completo — este documento é o insumo para o time de backend
+- [Para `reutilizar`]: nenhuma alteração necessária no backend
+```
+
+**Campos obrigatórios por classificação:**
+- `reutilizar`: classificação + referência ao serviço existente
+- `extensão`: classificação + serviço base + delta de request/response
+- `novo`: classificação + método + path + request completo + response completo
+
 ---
 
 ## Fluxo
@@ -151,20 +214,25 @@ flowchart TD
     C --> D{Skills disponíveis\ne atualizadas?}
     D -- Não --> E[Verificar Fase 0 e 0b\nantes de continuar]
     D -- Sim --> F["Copilot gera spec.md\ncom seção Flags preenchida"]
-    F --> G{PO revisa\nFlags}
+    F --> F2{MCP catálogo\ndisponível?}
+    F2 -- Sim --> F3[Consulta catálogo:\nclassifica endpoints\nreutilizar/extensão/novo]
+    F2 -- Não --> F4[PO classifica endpoints\nmanualmente]
+    F3 --> F5[Copilot gera api-contract.md\ncom contratos dos endpoints]
+    F4 --> F5
+    F5 --> G{PO revisa\nFlags}
     G -- Flags 🔴\nabertas --> H[PO aciona\nPolicy Owners]
     H --> I{Policy Owner\nresolve a flag}
     I -- Decisão\ndocumentada --> J[Flag atualizada\nno spec.md]
     I -- Requer\nmudança de escopo --> K[Atualiza intent.md\ne re-gera spec]
     K --> F
     J --> G
-    G -- Sem Flags 🔴\nabertas --> L[Commit do spec.md\nabre PR]
-    L --> M[Workflow intent-to-spec.yml\nvalida schema + flags]
+    G -- Sem Flags 🔴\nabertas --> L[Commit de spec.md\n+ api-contract.md, abre PR]
+    L --> M[Workflow intent-to-spec.yml\nvalida schema + flags + api-contract]
     M --> N{Validação\nde CI}
     N -- Falha --> O[PO corrige campos\nfaltantes]
     O --> L
     N -- Passa --> P{PO aprova\nmerge do PR}
-    P -- Merge --> Q([spec.md aprovado\npipeline avança para Plan])
+    P -- Merge --> Q([spec.md + api-contract.md aprovados\npipeline avança para Plan])
     P -- Fecha\nsem merge --> R([Spec rejeitada\nretorna ao backlog])
 ```
 
@@ -290,6 +358,47 @@ Critérios (1-5 cada):
 ```
 
 **Critério de aprovação:** ≥ 3.5 em todos os critérios, nenhum < 2.
+
+#### Grader de api-contract.md
+
+```python
+# graders/api_contract_check.py
+
+def grade_api_contract(api_contract_md: str) -> dict:
+    import re, yaml
+
+    frontmatter = yaml.safe_load(api_contract_md.split('---')[1])
+    valid_classifications = {'reutilizar', 'extensão', 'novo'}
+
+    endpoints = re.findall(r'### .+', api_contract_md)
+    results = []
+
+    for ep in endpoints:
+        block = extract_endpoint_block(api_contract_md, ep)
+        classification = extract_field(block, 'Classificação')
+
+        if classification not in valid_classifications:
+            results.append({"endpoint": ep, "error": f"classificação inválida: {classification}"})
+            continue
+
+        if classification == 'novo':
+            missing = []
+            for required in ['Método', 'Path', 'Request', 'Response']:
+                if required not in block:
+                    missing.append(required)
+            if missing:
+                results.append({"endpoint": ep, "error": f"campos faltando para 'novo': {missing}"})
+
+        if classification == 'extensão':
+            if 'Serviço existente' not in block:
+                results.append({"endpoint": ep, "error": "extensão sem referência ao serviço base"})
+
+    return {
+        "passed": len(results) == 0,
+        "total_endpoints": len(endpoints),
+        "errors": results
+    }
+```
 
 ### Como rodar
 

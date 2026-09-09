@@ -23,6 +23,7 @@ O Agente 04 inverte isso: a API do BBDS está sempre atualizada em `bbds-api-ref
   - Skills `bbds-api`, `bbds-ux-guidelines`, `bbds-patterns` publicadas
   - `figma-to-code` skill aprimorada com acesso ao `bbds-api-reference.md`
 - `plan.md` commitado no repo (status check `require-plan` passou)
+- `api-contract.md` disponível no repo (gerado pelo Agente 02)
 - `.github/copilot-instructions.md` do repo com comandos de test/lint documentados
 
 ---
@@ -49,6 +50,26 @@ Para itens de implementação que envolvem novas telas ou componentes, o engenhe
 3. Cruza contra `bbds-api-reference.md` — valida que o componente existe e que as props são atuais
 4. Emite aviso se um elemento não tem correspondente no BBDS (candidato a novo componente)
 
+### `api-contract.md`
+
+Lido junto com o `plan.md` para gerar a estrutura de adapters. Para cada endpoint classificado como `novo` ou `extensão`, o agente cria:
+
+```
+services/<feature>/
+  <Feature>Service.ts        ← interface TypeScript (a porta)
+  <Feature>ServiceMock.ts    ← mock seguindo o contrato do api-contract.md
+  <Feature>ServiceImpl.ts    ← placeholder (implementado quando backend estiver pronto)
+  index.ts                   ← seleciona mock ou impl via feature flag
+```
+
+As telas importam apenas `<Feature>Service.ts` — nunca o mock ou impl diretamente:
+
+```tsx
+// PaymentScreen.tsx
+import { usePaymentService } from '@services/payment'
+// não sabe e não precisa saber se está usando mock ou implementação real
+```
+
 ### `.github/copilot-instructions.md` do repo-alvo
 
 Carregado automaticamente. Define:
@@ -74,6 +95,9 @@ O output não é um arquivo único — é o conjunto de alterações no repo. Pa
 - [ ] Lint sem erros novos (`eslint --ext .ts,.tsx src/ --max-warnings 0`)
 - [ ] Props BBDS usadas existem em `bbds-api-reference.md` (versão atual)
 - [ ] Nenhuma prop `@deprecated` usada sem migration path aplicado
+- [ ] Para cada endpoint `novo` ou `extensão` em `api-contract.md`: estrutura de adapter completa criada (`<Feature>Service.ts`, `<Feature>ServiceMock.ts`, `<Feature>ServiceImpl.ts`, `index.ts`)
+- [ ] Nenhuma tela importa `ServiceMock` ou `ServiceImpl` diretamente — apenas via interface ou hook
+- [ ] Feature flag para cada novo endpoint criada e configurada como `false` (mock ativo por padrão)
 
 **Proibido:**
 - [ ] `console.log`, `console.error`, `debugger` no diff
@@ -87,8 +111,12 @@ O output não é um arquivo único — é o conjunto de alterações no repo. Pa
 
 ```mermaid
 flowchart TD
-    A([Engenheiro com\nplan.md commitado]) --> B[Abre Copilot Edits\ncom #file:plan.md]
-    B --> C[Seleciona item 1\nda Ordem de trabalho]
+    A([Engenheiro com\nplan.md commitado]) --> B[Abre Copilot Edits\ncom #file:plan.md #file:api-contract.md]
+    B --> B2{api-contract.md tem\nendpoints novo/extensão?}
+    B2 -- Sim --> B3[Gera estrutura de adapters:\nService.ts + ServiceMock.ts\n+ ServiceImpl.ts + index.ts]
+    B3 --> C
+    B2 -- Não --> C
+    C[Seleciona item 1\nda Ordem de trabalho]
     C --> D{Item envolve\nnova tela/componente\nde UI?}
     D -- Sim --> E[Invoca figma-to-code skill\ncom link da tela Figma]
     E --> F[Skill identifica componentes\nBBDS na tela]
@@ -192,13 +220,40 @@ def grade(output_files: dict, plan_md: str, api_reference: str) -> dict:
                                      if not any(i.startswith(lib) for lib in approved_libs)
                                      and not i.startswith('.')]
 
+    # 7. Adapter pattern: verificar estrutura para endpoints 'novo'/'extensão'
+    import os
+    adapter_errors = []
+    # api_contract_endpoints: lista de {name, classification} passada como parâmetro
+    for ep in api_contract_endpoints:
+        if ep['classification'] in ('novo', 'extensão'):
+            feature = ep['feature']
+            required_files = [
+                f"services/{feature}/{feature.capitalize()}Service.ts",
+                f"services/{feature}/{feature.capitalize()}ServiceMock.ts",
+                f"services/{feature}/{feature.capitalize()}ServiceImpl.ts",
+                f"services/{feature}/index.ts",
+            ]
+            for f in required_files:
+                if f not in output_files:
+                    adapter_errors.append(f"arquivo de adapter faltando: {f}")
+
+    # 8. Telas não importam mock/impl diretamente
+    direct_imports = re.findall(r"from '[^']*ServiceMock|from '[^']*ServiceImpl", all_code)
+    # excluir os próprios arquivos de adapter
+    direct_imports_from_screens = [i for i in direct_imports
+                                   if not any(f in i for f in ['ServiceMock', 'ServiceImpl']
+                                              if i.endswith(('.ts', '.tsx')))]
+
+    results['adapter_pattern_errors'] = adapter_errors
+    results['direct_mock_imports'] = direct_imports
     results['passed'] = (
         results['tests_pass'] and
         results['lint_pass'] and
         not results['debug_code'] and
         not results['invalid_bbds_props'] and
         not results['deprecated_props_used'] and
-        not results['unapproved_imports']
+        not results['unapproved_imports'] and
+        not adapter_errors
     )
     return results
 ```

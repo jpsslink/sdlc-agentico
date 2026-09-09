@@ -20,7 +20,7 @@ O Copilot Code Review faz a revisão sistemática — verifica bugs, segurança,
 
 - Copilot Code Review habilitado no GitHub Copilot Enterprise (feature Enterprise)
 - `REVIEW.md` commitado no repo com as rubricas de review
-- `spec.md` e `plan.md` presentes na branch ou referenciados no PR
+- `spec.md`, `plan.md` e `api-contract.md` presentes na branch ou referenciados no PR
 - Branch protection configurado: 1 aprovação humana + CI green = obrigatórios
 - GitHub environment `production` configurado com aprovador nomeado
 
@@ -38,6 +38,7 @@ O que o Copilot Code Review analisa:
 | Arquivos de teste | Verificação de cobertura dos critérios de aceitação do spec.md |
 | `plan.md` (referenciado) | Verificação de conformidade — o código implementa o que o plan disse? |
 | `spec.md` (referenciado) | Verificação de conformidade com os requisitos aprovados |
+| `api-contract.md` (referenciado) | Verificação de prontidão de backend — gate de feature flag |
 | `.github/copilot-instructions.md` | Padrões de plataforma para validação |
 
 ### `REVIEW.md` — a rubrica de review
@@ -71,6 +72,22 @@ Define o que o Copilot revisa e como prioriza. Cada repo tem seu `REVIEW.md` (ba
 - Estrutura de pastas fora do padrão do bundle
 - Uso de bibliotecas fora da allowlist aprovada
 - Props BBDS incorretas ou deprecated
+
+### Pass 5: Prontidão de backend (Severidade: Important — bloqueia deploy em prod)
+
+Para cada endpoint em `api-contract.md` classificado como `novo` ou `extensão`:
+
+1. Existe `<Feature>ServiceImpl.ts` no repo?
+   - **SIM** → deploy usa implementação real, feature pode ser ativada
+   - **NÃO** → verificar se a feature flag está desativada
+
+2. Existe `<Feature>ServiceMock.ts` ativo via feature flag desativada?
+   - **Flag desativada + ServiceMock ativo** → deploy autorizado (feature oculta de usuários)
+   - **Flag ativada sem ServiceImpl** → **deploy BLOQUEADO** — mock não pode chegar a produção exposto
+
+3. Estrutura do adapter está correta?
+   - Telas importam apenas a interface (`<Feature>Service.ts`)?
+   - `index.ts` usa feature flag para selecionar mock ou impl?
 
 ## Exclusões (não reportar)
 - Arquivos gerados automaticamente (*.generated.ts, *.d.ts)
@@ -131,7 +148,7 @@ Os 3 nits são opcionais — merge pode ocorrer sem endereçá-los.
 ```mermaid
 flowchart TD
     A([Engenheiro abre PR\ncom código implementado]) --> B[Copilot Code Review\ndispara automaticamente\nEnterprise feature]
-    B --> C[4 passes de review:\nBugs → Segurança → Spec/Plan\n→ Padrões de plataforma]
+    B --> C[5 passes de review:\nBugs → Segurança → Spec/Plan\n→ Padrões → Prontidão de backend]
     C --> D[Findings postados\nno PR como comentários]
     D --> E{Important\nfindings?}
     E -- Sim --> F[Engenheiro endereça\nimportant findings]
@@ -143,7 +160,12 @@ flowchart TD
     E -- Não --> J{CI\npassa?}
     J -- Não --> K[Engenheiro corrige\nfalhas de CI]
     K --> J
-    J -- Sim --> L[Reviewer humano\nrecebe PR para aprovação]
+    J -- Sim --> JB{api-contract.md tem\nendpoints novo/extensão\nsem ServiceImpl.ts?}
+    JB -- Sim → flag ativada --> JB2[BLOQUEADO: mock não\npode ir a prod exposto\nDesativar flag ou criar impl]
+    JB2 --> JB
+    JB -- Sim → flag desativada --> L
+    JB -- Não --> L
+    L[Reviewer humano\nrecebe PR para aprovação]
     L --> M{Reviewer\napoia o merge?}
     M -- Solicita\najustes --> N[Engenheiro\ncorrige e atualiza]
     N --> L
@@ -341,6 +363,18 @@ O deploy em produção requer aprovação explícita do release manager via GitH
 ```
 
 O release manager recebe notificação no GitHub, tem acesso ao link do PR, ao Copilot Review summary, e ao histórico de CI. Aprova ou recusa com comentário.
+
+### Gate de backend: prontidão de serviços
+
+Deploy de features com endpoints `novo` ou `extensão` segue esta regra:
+
+| Estado | Deploy permitido? | Comportamento em produção |
+|---|---|---|
+| `ServiceImpl.ts` existe + flag ativada | Sim | Feature visível, usando backend real |
+| `ServiceImpl.ts` não existe + flag desativada | Sim | Feature oculta, mock ativo internamente |
+| `ServiceImpl.ts` não existe + flag ativada | **Não** | Mock exposto a usuários — bloqueado |
+
+A ativação da feature flag é gate explicitamente humano — feita pelo release manager após validação do backend real em staging. O release manager não deve ativar a flag enquanto o time de backend não confirmar que o serviço está pronto.
 
 ### Achados que alimentam `copilot-instructions.md`
 

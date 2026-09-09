@@ -91,6 +91,17 @@ metrics:
       1sigma: { action: log }
       2sigma: { action: correlate, tools: "firebase-mcp,git-log,gh-release" }
       3sigma: { action: diagnose+intent_md, uses: correlation_pipeline }
+
+  # Dívida de backend — adapters sem implementação real
+  - metric: backend_debt
+    source: repo_scan          # scan de *ServiceMock.ts sem *ServiceImpl.ts correspondente
+    tiers:
+      any: { action: log }     # sempre registra — visibilidade do backlog de backend
+    report:
+      frequency: weekly
+      format: |
+        features aguardando backend:
+          - {feature}: {mock_file} (criado em {date}, endpoint: {endpoint})
 ```
 
 ---
@@ -125,7 +136,27 @@ A renderização em `ProfileScreen.tsx:47` não tem null check.
 **Labels:** `crash`, `Important`, `bundle:contratacao`, `auto-generated`
 ```
 
-### 2. PR com `intent.md` (entrada formal no pipeline)
+### 2. Relatório semanal de dívida de backend
+
+Gerado automaticamente via scan do repo. Identifica features com `*ServiceMock.ts` sem `*ServiceImpl.ts` correspondente — features prontas no frontend aguardando backend real.
+
+```markdown
+## Backend Debt Report — [Bundle] — 2024-01-15
+
+### Features aguardando implementação de backend
+
+| Feature | Mock criado em | Endpoint (api-contract.md) | Dias aguardando |
+|---|---|---|---|
+| `payment` | 2024-01-08 | `POST /api/v1/payment/validate` | 7 |
+| `credit-limit` | 2023-12-20 | `GET /api/v2/credit/limit` | 26 |
+
+**Ação sugerida:** Compartilhar com o time de backend para priorização.
+**Features prontas para ativar:** Nenhuma neste ciclo (sem ServiceImpl.ts novos desde o último report).
+```
+
+Esse relatório é postado como comentário na GitHub issue de rastreamento do sprint e enviado ao release manager como insumo para a decisão de ativação de feature flags.
+
+### 3. PR com `intent.md` (entrada formal no pipeline)
 
 O PR com o `intent.md` rascunhado é a forma de entrar no pipeline SDLC. Formato do `intent.md` gerado:
 
@@ -554,6 +585,21 @@ Todo incidente que passou pelo Agente 07:
   Fonte: GitHub issues com label `crash` ou `journey-failure`, agrupadas por label de classe
 - **Frequência**: Mensal; tendência de 6 meses
 - **Target**: < 20% de repeat rate por classe | Alarme: > 40%
+
+#### Dívida de backend — features aguardando implementação
+
+- **Por que foi escolhida**: Mede o tamanho do backlog de features prontas no frontend mas sem backend real. Crescimento constante indica que o time de backend está subutilizando o `api-contract.md` como documento de handoff — ou que não há priorização do backlog de serviços.
+- **O que indica quando sobe**: Muitas features sendo liberadas com mocks, sem plano de backend correspondente. Ação: compartilhar relatório com time de backend e product owner para priorização.
+- **Como medir**:
+  ```bash
+  # Conta ServiceMock sem ServiceImpl no repo
+  find services/ -name '*ServiceMock.ts' | while read mock; do
+    impl="${mock/ServiceMock/ServiceImpl}"
+    [ ! -f "$impl" ] && echo "$mock"
+  done | wc -l
+  ```
+- **Frequência**: Semanal (incluído no relatório de dívida)
+- **Target**: nenhum valor absoluto — monitorar tendência; crescimento > 5 features/semana = sinal de desalinhamento
 
 #### `diagnosis_path` correto validado pelo post-mortem (confirmação real vs. hipótese)
 

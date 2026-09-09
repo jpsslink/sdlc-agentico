@@ -19,6 +19,7 @@ O `plan.md` formaliza esse processo: o engenheiro usa o Copilot em Plan Mode par
 ## Pré-requisitos
 
 - `spec.md` mergeado e disponível no repo
+- `api-contract.md` mergeado e disponível no repo (gerado pelo Agente 02)
 - `.github/copilot-instructions.md` do repo-alvo deve existir (gerado na Fase 0)
 - Status check `require-plan` configurado no branch protection do repo-alvo
 - Git hooks locais instalados (husky/lefthook) para feedback imediato no dev
@@ -38,6 +39,16 @@ O agente lê a spec inteira, mas foca em:
 | `Constraints técnicas` | Informa decisões de implementação (ex: caching strategy, versão mínima de OS) |
 | `Sistemas Envolvidos` | Define o escopo de repos/bundles afetados |
 | `Critérios de Aceitação` | Orienta a estratégia de testes do plan |
+
+### `api-contract.md`
+
+O agente lê o `api-contract.md` para planejar a estrutura de adapters necessária:
+
+| Campo do api-contract.md | Uso no plan.md |
+|---|---|
+| Endpoints classificados como `novo` | Planejar criação de `<Feature>Service.ts` (interface), `<Feature>ServiceMock.ts`, `<Feature>ServiceImpl.ts` (placeholder), `index.ts` (selector de feature flag) |
+| Endpoints classificados como `extensão` | Planejar atualização do adapter existente + novo mock |
+| Endpoints classificados como `reutilizar` | Sem novo adapter necessário — apenas referenciar o existente |
 
 ### `.github/copilot-instructions.md` do repo-alvo
 
@@ -115,6 +126,19 @@ status: draft | approved
 **Descrição**: [...]
 **Mitigação**: [...]
 
+## Dependências de Backend
+
+> Gerado a partir do `api-contract.md`. Informa ao engenheiro quais adapters precisam ser criados antes de implementar as telas.
+
+| Endpoint | Classificação | Adapter necessário | Status |
+|---|---|---|---|
+| `POST /api/v1/recurso` | `novo` | `<Feature>Service.ts` + mock + index | a criar |
+| `GET /api/v1/outro` | `reutilizar` | nenhum | — |
+
+- Endpoints `novo` ou `extensão` → criar estrutura completa de adapter em `services/<feature>/`
+- Feature flags correspondentes devem ser configuradas como `false` até o backend real existir
+- Telas importam apenas `<Feature>Service.ts` (interface) — nunca o mock ou impl diretamente
+
 ## Dependências Externas
 
 - `[serviço/repo]`: necessário para [item X]. Status: [disponível | em desenvolvimento | bloqueado]
@@ -144,7 +168,7 @@ flowchart TD
     A([Engenheiro com spec.md\naprovado]) --> B{repo-alvo tem\ncopilot-instructions.md?}
     B -- Não --> C[Executar bootstrap\nFase 0 no repo\nantes de continuar]
     B -- Sim --> D[Abre VS Code no\nrepo do bundle]
-    D --> E[Copilot agent mode\ncom #file:spec.md\ncopilot-instructions.md carregado]
+    D --> E[Copilot agent mode\ncom #file:spec.md #file:api-contract.md\ncopilot-instructions.md carregado]
     E --> F[Plan Mode ativado\nCopilot analisa o repo]
     F --> G[Copilot lista arquivos\nafetados e ordem de trabalho]
     G --> H{Engenheiro revisa\no plano gerado}
@@ -199,7 +223,15 @@ agents/03-plan/evals/tasks/
   "must_include_files": ["src/navigation/AppNavigator.tsx"],
   "must_not_include": ["src/screens/HomeScreen.tsx"],
   "required_test_files": ["*.test.tsx"],
-  "max_items_in_order": 10
+  "max_items_in_order": 10,
+  "adapter_pattern": {
+    "endpoints_novo": ["POST /api/v1/recurso"],
+    "must_plan_files": [
+      "services/<feature>/<Feature>Service.ts",
+      "services/<feature>/<Feature>ServiceMock.ts",
+      "services/<feature>/index.ts"
+    ]
+  }
 }
 ```
 
@@ -242,15 +274,28 @@ def grade(output_md: str, repo_snapshot: dict, rules: dict) -> dict:
     test_section = re.search(r'## Estratégia de Testes(.*?)##', output_md, re.DOTALL)
     empty_tests = not test_section or len(test_section.group(1).strip()) < 20
 
+    # Adapter pattern: endpoints 'novo' devem ter os 4 arquivos planejados
+    adapter_errors = []
+    for ep in rules.get('adapter_pattern', {}).get('endpoints_novo', []):
+        for adapter_file in rules.get('adapter_pattern', {}).get('must_plan_files', []):
+            if adapter_file not in output_md:
+                adapter_errors.append(f"adapter file não planejado para endpoint '{ep}': {adapter_file}")
+
+    # Seção Dependências de Backend presente quando há api-contract
+    has_backend_section = '## Dependências de Backend' in output_md
+
     return {
         "passed": not any([missing_fields, nonexistent, missing_sections,
-                           missing_required, included_forbidden, empty_tests]),
+                           missing_required, included_forbidden, empty_tests,
+                           adapter_errors, not has_backend_section]),
         "missing_fields": missing_fields,
         "nonexistent_files_referenced": nonexistent,
         "missing_sections": missing_sections,
         "missing_required_files": missing_required,
         "included_forbidden_files": included_forbidden,
-        "empty_test_strategy": empty_tests
+        "empty_test_strategy": empty_tests,
+        "adapter_pattern_errors": adapter_errors,
+        "missing_backend_section": not has_backend_section
     }
 ```
 
