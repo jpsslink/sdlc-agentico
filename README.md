@@ -16,7 +16,21 @@ O playbook conceitual desta proposta é o [AI-native SDLC da Anthropic](https://
 
 ## O Problema
 
-O desenvolvimento mobile enfrenta três gargalos que se ampliam com o crescimento do número de times e repos:
+### 0. A pressão do mercado: adotar IA ou perder velocidade e qualidade
+
+O mercado de software está passando por uma mudança de paradigma. Ferramentas de IA generativa não são mais uma promessa futura — estão em produção em times de desenvolvimento ao redor do mundo, e o gap entre times que as usam bem e times que não usam está crescendo em velocidade, qualidade e capacidade de iteração.
+
+Equipes que integram IA de forma estruturada no seu SDLC não apenas escrevem código mais rápido: elas aplicam padrões de forma consistente, detectam problemas mais cedo, reduzem o tempo entre ideia e valor entregue ao cliente, e liberam engenheiros para o trabalho que realmente exige julgamento humano. O resultado é visível para o cliente: mais funcionalidades entregues, com menos bugs, em menos tempo.
+
+O risco de não se mover não é abstrato. Empresas que ainda tratam IA como "adjunto opcional" do fluxo de desenvolvimento estão se distanciando das que integram IA como parte estrutural do processo — em ritmo de entrega, em qualidade, e em capacidade de atrair e reter engenheiros que querem trabalhar com ferramentas modernas.
+
+**O problema não é falta de ferramentas de IA disponíveis.** O GitHub Copilot Enterprise já está contratado. O problema é que adotar IA de forma pontual — um engenheiro usando aqui, outro usando ali, cada um do seu jeito — não gera o ganho de escala. O que converte adoção individual em vantagem organizacional é uma **estrutura**: artefatos padronizados, contexto de plataforma injetado de forma determinística, gates de qualidade automáticos, e métricas que mostram se os agentes estão funcionando como esperado.
+
+Esta esteira é essa estrutura.
+
+---
+
+Os três problemas abaixo são as barreiras operacionais que impedem essa adoção de gerar resultado em escala:
 
 ### 1. Conhecimento disperso e inacessível
 
