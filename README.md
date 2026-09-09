@@ -181,6 +181,13 @@ O conhecimento de plataforma — padrões de bundle, anti-patterns, convenções
 
 Cada repo recebe um `copilot-instructions.md` com contexto fundamental: estrutura do bundle, comandos de build/test/lint, allowlist de dependências aprovadas, referências ao conhecimento disponível. Esse arquivo é o "README para o agente" — o que qualquer engenheiro novo precisaria saber, formalizado em uma instrução permanente.
 
+> **⚠️ Pré-requisito da Fase 0 — Auditoria de Conhecimento:** a documentação de plataforma atual está fragmentada e desatualizada. Skills são tão confiáveis quanto o conteúdo que encodam — conteúdo incorreto distribuído de forma determinística é erro codificado com confiança. Por isso, a Fase 0 começa com uma etapa de auditoria e validação antes de qualquer skill ser escrita. Ver [ADR-012](docs/decisions.md#adr-012--auditoria-e-validação-da-base-de-conhecimento-como-pré-requisito-da-fase-0).
+
+A Fase 0 tem três sub-etapas sequenciais:
+1. **Fase 0-A: Inventário** — levantar onde o conhecimento existe hoje, classificar por domínio, identificar sobreposições e contradições
+2. **Fase 0-B: Validação com SMEs** — engenheiros sênior validam e resolvem o que é canônico; gaps são documentados explicitamente
+3. **Fase 0-C: Fonte de verdade + processo de manutenção** — cada domínio de skill tem um dono e um processo de atualização definidos antes de entrar em produção
+
 Conhecimento criado na Fase 0:
 - `platform-standards` — convenções de código, arquitetura de bundle, anti-patterns documentados
 - `security` — OWASP React Native, secure storage, cert pinning, padrões de autenticação

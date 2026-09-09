@@ -248,6 +248,7 @@ Formalizar os padrões em skills cria oportunidade de identificar inconsistênci
 - Há um período de 4-6 semanas de investimento em conhecimento antes do primeiro agente funcionar bem em produção
 - O processo de bootstrap revela gaps de documentação e inconsistências de padrões — é uma oportunidade de alinhamento do time
 - Repos sem Fase 0 completa ficam fora da esteira — cria incentivo para priorizar o bootstrap
+- **Pré-requisito da Fase 0:** a documentação de plataforma precisa ser auditada e validada antes do bootstrap — skills são tão confiáveis quanto o conteúdo que encodam. Ver [ADR-012](#adr-012--auditoria-e-validação-da-base-de-conhecimento-como-pré-requisito-da-fase-0).
 
 ---
 
@@ -583,3 +584,72 @@ O deploy com feature flag desativada permite que o código esteja em produção 
 - O `api-contract.md` é o artefato de handoff entre plataforma mobile e times de backend — deve ser acordado e mantido conjuntamente
 - O Agente 07 rastreia débito de backend: quantos `*ServiceMock.ts` existem sem `*ServiceImpl.ts` correspondente
 - Quando um MCP de catálogo de serviços existir, o Agente 02 automatiza a classificação dos endpoints — o padrão se mantém, a entrada muda
+
+---
+
+## ADR-012 — Auditoria e Validação da Base de Conhecimento como Pré-Requisito da Fase 0
+
+### Contexto
+
+A Fase 0 (ADR-005) define que o bootstrap de conhecimento de plataforma deve ser executado antes de qualquer agente entrar em produção. O pressuposto implícito desse ADR é que o conteúdo a ser formalizado em skills existe e é confiável.
+
+Na prática, esse pressuposto não se sustenta: a documentação de plataforma atual está **fragmentada, desatualizada e incompleta**. O conhecimento real vive em parte em arquivos Markdown espalhados por repos, em parte em wikis desatualizadas, e em grande parte na cabeça de engenheiros sênior. Não há um inventário claro do que existe, nem validação de que o que existe reflete o estado atual da plataforma.
+
+O risco é concreto: skills escritas a partir de documentação desatualizada entregam contexto incorreto de forma determinística e com alta confiança. Um agente que recebe uma skill com uma prop deprecada do BBDS vai usá-la em todo output que gerar — e o comportamento é reproduzível e difícil de rastrear até a skill incorreta. **Conteúdo incorreto + distribuição determinística = erro codificado com confiança.**
+
+Esse problema precede e bloqueia o bootstrap da Fase 0: não há como escrever skills confiáveis sem antes saber o que é verdadeiro.
+
+### Decisão
+
+A auditoria e validação da base de conhecimento de plataforma é uma etapa obrigatória **dentro da Fase 0**, executada antes da escrita de qualquer skill. Ela tem três fases sequenciais:
+
+**Fase 0-A: Inventário**
+- Levantar onde o conhecimento de plataforma existe hoje: repos, wikis, Figma, documentos, conversas em Slack
+- Classificar cada fonte por domínio (arquitetura de bundle, BBDS, segurança, convenções de código, anti-patterns, padrões de UX)
+- Identificar sobreposições e contradições entre fontes
+
+**Fase 0-B: Validação com SMEs**
+- Para cada domínio, um engenheiro sênior que detém esse conhecimento valida se o conteúdo encontrado reflete o estado atual da plataforma
+- Contradições entre fontes são resolvidas — o SME define o que é canônico
+- Gaps são documentados explicitamente: "não há documentação sobre X" é uma informação válida que impede a criação da skill correspondente até que o conteúdo seja produzido
+
+**Fase 0-C: Definição de fonte de verdade e processo de manutenção**
+- Para cada domínio de conhecimento, definir onde vive a fonte de verdade e quem é responsável por mantê-la atualizada
+- Para conhecimento auto-gerável (BBDS API): definir o pipeline de geração automática (ADR-006)
+- Para conhecimento curado manualmente: definir o processo de revisão — quem aprova mudanças, com que frequência é revisado, qual o gatilho para atualização
+- Sem dono e sem processo de manutenção definidos, a skill não é criada — é preferível ausência de skill a skill incorreta
+
+### Justificativa
+
+**Uma skill incorreta é pior que ausência de skill.**
+
+Sem skill, o agente não tem contexto sobre um domínio e pode pedir ao engenheiro para completar a informação, ou gerar output conservador. Com skill incorreta, o agente gera output com alta confiança baseado em premissa falsa — e esse output passa pelos gates porque o código parece estruturalmente correto.
+
+**O determinismo que é a vantagem das skills também amplifica o risco de conteúdo incorreto.**
+
+RAG é probabilístico — um chunk errado pode não ser recuperado. Uma skill incorreta é injetada em 100% das execuções que a carregam. O erro é sistemático, não aleatório.
+
+**A auditoria é também um processo de alinhamento de time.**
+
+Formalizar o que é o conhecimento canônico de plataforma força conversas que normalmente não acontecem: "o padrão X é mesmo esse?" ou "quem decidiu que Y é um anti-pattern?". O processo de validação com SMEs gera alinhamento que tem valor independente da esteira.
+
+**O gap de documentação é um risco de negócio já existente — a Fase 0 é a oportunidade de resolvê-lo.**
+
+A esteira não cria esse problema; ela o torna visível. Aproveitar a Fase 0 para endereçá-lo sistematicamente é mais eficiente do que postergar — e é pré-requisito para qualquer forma de automação confiável, com ou sem agentes.
+
+### Alternativas Consideradas
+
+**Começar as skills com o conhecimento disponível e corrigir iterativamente:** O argumento é agilidade — não bloquear a Fase 0 esperando uma auditoria perfeita. O risco é que skills incorretas entrem em produção, os agentes gerem outputs errados, e a correção exija retrabalho em artefatos já aprovados por gates humanos. A percepção de que "o agente comete erros básicos de plataforma" é difícil de reverter.
+
+**Confiar no gate humano de review para capturar erros de skills:** O review humano captura erros óbvios, mas não captura erros sutis de padrão (uma prop que existia na versão anterior do BBDS, um anti-pattern que foi deprecado há 6 meses). O volume de outputs que agentes geram supera a capacidade de atenção humana em review detalhado.
+
+**Usar RAG sobre a documentação existente (sem auditoria):** Mitiga o risco de erros sistemáticos, mas abre mão do determinismo e testabilidade que é a vantagem central da abordagem de skills (ADR-002). E ainda entrega conteúdo desatualizado — apenas de forma probabilística.
+
+### Consequências
+
+- A Fase 0 passa a ter uma etapa explícita anterior ao bootstrap: a auditoria. Isso adiciona 2-4 semanas ao timeline, mas previne retrabalho maior causado por skills incorretas
+- Cada skill criada tem um **dono** e um **processo de manutenção** definidos — sem isso, a skill não é publicada
+- Skills sem fonte de verdade confiável são marcadas como `status: pending-audit` e não entram em produção
+- O inventário produzido na Fase 0-A é um artefato do projeto — vive em `docs/knowledge-inventory.md` e é atualizado conforme novos domínios são incorporados
+- Gaps de conhecimento identificados na auditoria viram itens de backlog com dono — a auditoria não termina sem que cada gap tenha uma decisão (produzir o conteúdo, declarar fora de escopo, ou aceitar a ausência de skill com registro explícito do risco)
+- O processo de manutenção definido na Fase 0-C é a base para o SLA de atualização de skills — se um padrão muda e a skill não é atualizada em N dias, é uma violação rastreável
