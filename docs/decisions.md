@@ -436,13 +436,13 @@ Deploy para produção requer aprovação explícita do release manager via GitH
 
 ---
 
-## ADR-009 — Arquitetura de Distribuição de Conhecimento (DECISÃO EM ABERTO)
+## ADR-009 — Arquitetura de Distribuição de Conhecimento (Direção: MCP Server Centralizado)
 
 ### Contexto
 
 A esteira precisa distribuir conhecimento de plataforma — padrões de código, API do BBDS, guidelines de UX, regras de segurança — para agentes que rodam em muitos repositórios, cada um mantido por equipes de produto autônomas.
 
-O plano original (Fase 0) previa Skills (SKILL.md) como mecanismo de distribuição. Essa abordagem é adequada para qualidade e determinismo do contexto (ver [ADR-002](#adr-002--skills-ao-invés-de-rag-para-conhecimento-de-domínio)), mas apresenta um problema estrutural de distribuição em escala:
+O plano original (Fase 0) previa Skills (SKILL.md) como mecanismo de distribuição. Essa abordagem é adequada para qualidade e determinismo do contexto (ver [ADR-002](#adr-002--injeção-determinística-de-conhecimento-em-vez-de-rag)), mas apresenta um problema estrutural de distribuição em escala:
 
 - Skills são arquivos em repos; cada time decide quando instalar e atualizar
 - Sem enforcement centralizado, repos acumulam versões diferentes do mesmo padrão (configuration drift)
@@ -474,11 +474,19 @@ Para muitas equipes descentralizadas em contexto bancário, a arquitetura híbri
 
 ### Decisão
 
-**Não definida.** A escolha da arquitetura requer validação de:
+**A direção é o MCP Server Centralizado** (modelo Stripe — ver análise em [`docs/knowledge-governance.md`](knowledge-governance.md)), com arquitetura híbrida em três camadas:
+
+1. **Org-level copilot-instructions** — regras não-negociáveis, enforcement automático, zero infraestrutura
+2. **MCP server central** — conhecimento rico de plataforma (BBDS, platform-standards, security), zero drift, auditabilidade via logs
+3. **Per-repo copilot-instructions.md** — contexto bundle-específico que cada time genuinamente controla
+
+O princípio de **injeção determinística** ([ADR-002](#adr-002--injeção-determinística-de-conhecimento-em-vez-de-rag)) é preservado: o MCP server expõe endpoints estruturados por chave (`get_component_api`, `get_standard`) — nunca busca semântica. Cada consulta retorna o mesmo conteúdo para a mesma chave, tornando os evals reproduzíveis.
+
+**Validação pendente antes da implementação:**
 - Viabilidade de construir e operar o MCP server internamente
 - Aceitação dos times de produto do modelo de consulta centralizada
 - Avaliação de MCP Gateway para auditoria regulatória
-- Estratégia de faseamento (org-level instructions no MVP; MCP server em seguida?)
+- Estratégia de faseamento: org-level instructions + skills curadas no MVP; MCP server na sequência
 
 **Participantes necessários:** time de plataforma, arquitetura, segurança.
 

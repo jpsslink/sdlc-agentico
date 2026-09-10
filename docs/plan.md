@@ -19,7 +19,7 @@ A esteira transforma o ciclo linear (Plan→Design→Build→Test→Deploy→Mai
 | Conceito Anthropic | Equivalente GitHub Copilot Enterprise | Compatível? |
 |---|---|---|
 | `CLAUDE.md` | `.github/copilot-instructions.md` | Mesmo propósito, nome/local diferente |
-| Skills (`.claude/skills/`) | Skills (`.github/skills/` ou `.claude/skills/`) | **Formato SKILL.md idêntico** — funciona em ambos |
+| Skills / MCP Knowledge | Skills (`.github/skills/` interim) → MCP server (direção) | Formato SKILL.md idêntico; conteúdo migra para MCP sem reescrita |
 | Plan Mode | Plan Mode nativo do Copilot | **Mesmo comportamento** |
 | Subagents | `runSubAgent` (`#tool:agent/runSubagent`) | **Equivalente funcional direto** |
 | Hooks | GitHub Actions + git hooks (pre-commit/pre-push) | Diferente — Copilot não tem hook system nativo |
@@ -28,9 +28,12 @@ A esteira transforma o ciclo linear (Plan→Design→Build→Test→Deploy→Mai
 | Managed Settings | Políticas de organização GitHub Copilot Enterprise | Equivalente |
 
 **Implicação crítica:** Skills escritas no formato SKILL.md funcionam tanto em Claude Code quanto em
-GitHub Copilot — o formato é compartilhado. O Copilot suporta explicitamente `.claude/skills/` como
-diretório válido. A adaptação real se resume a: (1) `CLAUDE.md` → `copilot-instructions.md`,
-e (2) substituição do sistema de hooks nativos do Claude Code por GitHub Actions.
+GitHub Copilot — o formato é compartilhado. A adaptação real se resume a: (1) `CLAUDE.md` →
+`copilot-instructions.md`, e (2) substituição do sistema de hooks nativos do Claude Code por GitHub
+Actions. A direção para distribuição de conhecimento de plataforma é MCP server centralizado (ver
+[ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado));
+o formato SKILL.md serve tanto como mecanismo interim quanto como a estrutura do conteúdo que será
+servido pelo MCP.
 
 ---
 
@@ -42,7 +45,7 @@ Este repo é o meta-repo da esteira — contém templates, agentes, skills, eval
 sdlc-agentico/
 ├── .github/
 │   ├── copilot-instructions.md          # Contexto principal para o Copilot (equiv. CLAUDE.md)
-│   ├── skills/                          # Skills compartilhadas (compatível com Copilot E Claude Code)
+│   ├── skills/                          # Skills (mecanismo interim — direção: MCP server central)
 │   │   ├── platform-standards/
 │   │   │   └── SKILL.md
 │   │   ├── security/

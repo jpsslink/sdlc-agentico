@@ -1,6 +1,6 @@
 # Governança de Conhecimento em Escala para Equipes Descentralizadas
 
-**Status:** Decisão em aberto — arquitetura de distribuição a definir antes da Fase 0 entrar em produção.
+**Status:** Direção definida — MCP Server Centralizado (validação de viabilidade pendente com time de plataforma, arquitetura e segurança). Ver [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado).
 
 Este documento analisa o problema de distribuição e governança de conhecimento de plataforma em uma organização com muitas equipes descentralizadas. É uma análise das alternativas identificadas, com recomendação para o cenário específico de uma plataforma mobile React Native.
 
@@ -422,16 +422,22 @@ A existência do bot RAG reduz o custo de construir o MCP server: a infraestrutu
 
 ---
 
-## Decisão Pendente
+## Direção e Próximos Passos
 
-A Fase 0 (Bootstrap de Conhecimento de Plataforma) foi planejada com skills como mecanismo de distribuição. Essa arquitetura precisa ser revisada antes de entrar em produção, considerando a análise acima.
+A análise acima sustenta o **MCP Server Centralizado** como direção arquitetural para distribuição de conhecimento de plataforma (BBDS, platform-standards, security) em muitos repos descentralizados. A decisão formal está registrada em [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado).
 
-**O que precisa ser decidido:**
-1. Qual das arquiteturas (ou combinação) é viável dado o time e infraestrutura disponíveis?
-2. O MCP server é construído internamente ou há um serviço gerenciado adequado?
-3. Qual é o faseamento: skills no MVP, MCP server em seguida?
+**Faseamento recomendado:**
+1. **MVP (curto prazo):** Org-level copilot-instructions para regras não-negociáveis + skills curadas por repo para validação do conteúdo — permite iniciar a Fase 0 enquanto o MCP server é planejado
+2. **Fase 1:** MCP server com endpoints para BBDS API e platform-standards — elimina drift nos domínios mais críticos
+3. **Fase 2:** MCP server cobre todos os domínios de conhecimento; per-repo copilot-instructions.md limitado a contexto genuinamente bundle-específico
 
-**Quem decide:** time de plataforma + arquitetura + segurança (dado o contexto bancário).
+**O que precisa ser validado antes do MCP server:**
+1. Viabilidade de construir e operar internamente (ou serviço gerenciado adequado?)
+2. Escopo dos endpoints do MVP (`bbds-api`, `platform-standards`, `security` — suficiente para começar)
+3. Avaliação de MCP Gateway para auditoria regulatória
+4. Aprovação dos times de produto do modelo de consulta centralizada
+
+**Quem valida:** time de plataforma + arquitetura + segurança (dado o contexto bancário).
 
 ---
 

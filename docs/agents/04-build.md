@@ -1,7 +1,7 @@
 # Agente 04 — Build
 
 **Estágio:** Implementação  
-**Runtime:** GitHub Copilot agent mode + Copilot Edits + skills BBDS + figma-to-code skill  
+**Runtime:** GitHub Copilot agent mode + Copilot Edits + contexto BBDS (MCP server ou skills interim) + figma-to-code  
 **Responsável pela aprovação:** CI green (gate automático)
 
 > Implementa o `plan.md` aprovado com a API correta do BBDS, validada automaticamente. Novas telas são mapeadas via `figma-to-code` com cruzamento contra a API atual — props incorretas ou obsoletas são detectadas antes do código ser escrito.
@@ -20,8 +20,8 @@ O Agente 04 inverte isso: a API do BBDS está sempre atualizada em `bbds-api-ref
 
 - **Fase 0b ativa**:
   - `platform-knowledge/bbds-api-reference.md` gerado e atual (versão do BBDS no `package.json`)
-  - Skills `bbds-api`, `bbds-ux-guidelines`, `bbds-patterns` publicadas
-  - `figma-to-code` skill aprimorada com acesso ao `bbds-api-reference.md`
+  - Domínios `bbds-api`, `bbds-ux-guidelines`, `bbds-patterns` disponíveis (via MCP server ou skills interim)
+  - `figma-to-code` aprimorado com acesso ao `bbds-api-reference.md`
 - `plan.md` commitado no repo (status check `require-plan` passou)
 - `api-contract.md` disponível no repo (gerado pelo Agente 02)
 - `.github/copilot-instructions.md` do repo com comandos de test/lint documentados

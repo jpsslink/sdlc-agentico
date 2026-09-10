@@ -12,10 +12,10 @@ Para cada domínio de conhecimento:
 - **Fontes existentes:** onde o conhecimento existe hoje (repo, wiki, Figma, conhecimento tácito)
 - **Status:** `ok` (validado por SME) | `desatualizado` | `incompleto` | `gap` (não existe) | `pendente-validação`
 - **SME responsável:** quem valida e mantém esse domínio
-- **Skill alvo:** qual skill vai encodar esse conhecimento
-- **Processo de manutenção:** como a skill é atualizada quando o conhecimento muda
+- **Domínio de conhecimento:** identificador do domínio (ex: `platform-standards`, `bbds-api`) — entregue via MCP server endpoint ou SKILL.md interim
+- **Processo de manutenção:** como o conteúdo é atualizado quando o conhecimento muda
 
-Skills com status diferente de `ok` **não entram em produção**.
+Domínios com status diferente de `ok` **não entram em produção**.
 
 ---
 
@@ -28,7 +28,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `platform-standards` |
+| **Domínio de conhecimento** | `platform-standards` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**
@@ -43,7 +43,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `platform-standards` |
+| **Domínio de conhecimento** | `platform-standards` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**
@@ -58,7 +58,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `platform-standards` |
+| **Domínio de conhecimento** | `platform-standards` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**
@@ -73,7 +73,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `security` |
+| **Domínio de conhecimento** | `security` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**
@@ -88,7 +88,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `security` |
+| **Domínio de conhecimento** | `security` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**
@@ -103,7 +103,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | TypeScript types no pacote `@bbds/components` |
 | **Status** | `pendente-validação` |
 | **SME responsável** | Time BBDS |
-| **Skill alvo** | `bbds-api` (auto-gerada via ts-morph — ver ADR-006) |
+| **Domínio de conhecimento** | `bbds-api` (auto-gerada via ts-morph — ver ADR-006; servida via MCP endpoint `get_component_api`) |
 | **Processo de manutenção** | Auto-geração em CI após cada release do BBDS |
 
 **Gaps identificados:**
@@ -119,7 +119,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | Time de UX |
-| **Skill alvo** | `bbds-ux-guidelines` |
+| **Domínio de conhecimento** | `bbds-ux-guidelines` |
 | **Processo de manutenção** | Curação manual — revisão a cada release com mudança de componente |
 
 **Gaps identificados:**
@@ -134,7 +134,7 @@ Skills com status diferente de `ok` **não entram em produção**.
 | **Fontes existentes** | — |
 | **Status** | `pendente-validação` |
 | **SME responsável** | — |
-| **Skill alvo** | `bbds-patterns` |
+| **Domínio de conhecimento** | `bbds-patterns` |
 | **Processo de manutenção** | — |
 
 **Gaps identificados:**

@@ -4,13 +4,13 @@
 **Runtime:** GitHub Actions + Copilot API (non-interactive)  
 **Responsável pela aprovação:** Threshold de CI configurado pelo tech lead
 
-> Testa a configuração dos agentes como código. Regressões em `copilot-instructions.md` ou skills são detectadas antes de chegarem ao desenvolvedor. Incidentes de produção tornam-se evals permanentes.
+> Testa a configuração dos agentes como código. Regressões em `copilot-instructions.md` ou no contexto de conhecimento injetado são detectadas antes de chegarem ao desenvolvedor. Incidentes de produção tornam-se evals permanentes.
 
 ---
 
 ## O que muda
 
-Agentes de IA são configurados via prompt — e configurações mudam. Sem testes, uma mudança em `copilot-instructions.md` para adicionar um novo padrão pode quebrar o comportamento de um agente existente sem que ninguém perceba.
+Agentes de IA são configurados via prompt — e configurações mudam. Sem testes, uma mudança em `copilot-instructions.md` ou no conteúdo de um domínio de conhecimento pode quebrar o comportamento de um agente existente sem que ninguém perceba.
 
 O Agente 05 implementa o conceito de "testes para configuração de agentes": a eval suite roda em CI da mesma forma que testes unitários rodam — automaticamente, com pass/fail determinístico, bloqueando merge quando o threshold não é atingido.
 

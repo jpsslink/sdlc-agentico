@@ -7,7 +7,7 @@ Este documento descreve como as peças do sistema se conectam: quais sistemas ex
 A arquitetura tem três camadas que operam simultaneamente:
 
 - **Pipeline SDLC** — a cadeia de 7 artefatos (intent.md → spec.md → plan.md → código → PR → produção) produzida pelos agentes
-- **Infraestrutura de Conhecimento** — skills e instruções que dão contexto especializado a cada agente no momento certo. **⚠️ O mecanismo de distribuição desse conhecimento para muitos repos descentralizados está em aberto** — ver [`knowledge-governance.md`](knowledge-governance.md)
+- **Infraestrutura de Conhecimento** — contexto especializado injetado deterministicamente a cada agente. **A direção é MCP Server Centralizado** para conhecimento de plataforma (BBDS, standards, security) — ver [`knowledge-governance.md`](knowledge-governance.md)
 - **Camada de Monitoramento** — detecta problemas em produção e alimenta o pipeline de volta, fechando o loop
 
 ---
@@ -25,7 +25,7 @@ flowchart TB
         JM([Journey Monitor])
     end
 
-    subgraph KNOW["Infraestrutura de Conhecimento ⚠️ distribuição em aberto"]
+    subgraph KNOW["Infraestrutura de Conhecimento (direção: MCP server centralizado)"]
         direction LR
         CI_INS[copilot-instructions.md]
         PS[platform-standards]
@@ -64,7 +64,7 @@ flowchart TB
 ### Como ler o diagrama
 
 - **Sistemas Externos (topo)**: ferramentas que a organização já usa — não são criadas para esta esteira, apenas integradas
-- **Infraestrutura de Conhecimento (esquerda)**: o conhecimento que especializa os agentes nos padrões da plataforma. O diagrama mostra skills como mecanismo, mas o **mecanismo de distribuição para muitos repos descentralizados está em aberto** — pode ser MCP server centralizado, pacote npm, ou híbrido. Ver [`knowledge-governance.md`](knowledge-governance.md)
+- **Infraestrutura de Conhecimento (esquerda)**: o conhecimento que especializa os agentes nos padrões da plataforma. A **direção é MCP server centralizado** — endpoints determinísticos servindo BBDS, platform-standards e security para todos os repos sem drift. Ver [`knowledge-governance.md`](knowledge-governance.md)
 - **Pipeline SDLC (centro)**: a cadeia de artefatos — o caminho de uma ideia até código em produção
 - **Monitoramento + Correlação (baixo)**: o que acontece após o deploy — o loop de retorno
 - **Setas sólidas (→)**: dados que fluem ativamente entre os componentes
@@ -141,21 +141,24 @@ A granularidade até o `screen_id` é o diferencial crítico: ela permite cruzar
 
 ---
 
-## Infraestrutura de Conhecimento — Skills
+## Infraestrutura de Conhecimento
 
-Skills são o mecanismo central para dar contexto especializado aos agentes. Sem skills, o Copilot tem conhecimento geral de React Native — mas não conhece os padrões específicos desta plataforma, esta versão do BBDS, ou estas regras de segurança.
+O conhecimento especializado de plataforma é injetado deterministicamente nos agentes — nunca via RAG, sempre via conteúdo curado e versionado. Sem esse contexto, o Copilot tem conhecimento geral de React Native, mas não conhece os padrões específicos desta plataforma, esta versão do BBDS, ou estas regras de segurança.
 
-> **⚠️ Decisão em aberto:** o diagrama acima mostra skills como mecanismo de entrega
-> de conhecimento. Essa arquitetura é adequada para **qualidade do contexto** (determinismo,
-> auditabilidade, evals), mas o modelo de skills por repo apresenta um problema de
-> **distribuição** para muitas equipes descentralizadas. O mecanismo exato de como o
-> conhecimento chega a cada repo ainda está sendo decidido — pode ser MCP server
-> centralizado (modelo Stripe), pacote npm versionado (modelo Shopify), ou híbrido.
-> Ver [`docs/knowledge-governance.md`](knowledge-governance.md) para a análise completa.
+> **Direção arquitetural:** a entrega de conhecimento de plataforma (BBDS, platform-standards, security)
+> tende ao **MCP Server Centralizado** — um servidor que expõe endpoints determinísticos
+> (`get_component_api`, `get_standard`) consultados pelos agentes em tempo de sessão. Zero drift:
+> uma atualização no servidor chega a todos os repos automaticamente. Zero ação necessária dos times.
+> Ver [`docs/knowledge-governance.md`](knowledge-governance.md) para a análise completa e [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado) para a decisão.
+>
+> Enquanto o MCP server não estiver operacional, o mecanismo interim são skills (SKILL.md) — o
+> conteúdo é o mesmo; o mecanismo de entrega muda quando o servidor for implantado.
 
-### O que é uma skill e como é carregada
+### Formato de conhecimento curado (SKILL.md)
 
-Uma skill é um arquivo Markdown no formato SKILL.md, armazenado em `.github/skills/` no repositório. Cada skill tem um campo `description` que é a chave do carregamento dinâmico:
+O conteúdo de cada domínio de conhecimento é estruturado no formato SKILL.md — Markdown com frontmatter `name` e `description`. No mecanismo interim (skills em repo), o arquivo fica em `.github/skills/`. No MCP server, o mesmo conteúdo é servido via endpoint estruturado. O formato é portável entre os dois mecanismos.
+
+Cada domínio tem um campo `description` que é a chave para carregamento dinâmico pelo Copilot:
 
 ```markdown
 ---
@@ -176,9 +179,9 @@ description: "Especificação completa da API dos componentes BBDS — props, ti
 Usar `variant` no lugar. `color="blue"` → `variant="primary"`.
 ```
 
-O GitHub Copilot Enterprise lê os `description` de todas as skills disponíveis a cada sessão. Quando o contexto menciona "componente BBDS" ou "Button" ou "prop", a skill `bbds-api` é carregada. Quando menciona "autenticação" ou "token" ou "biometria", a skill `security` é carregada. O engenheiro não precisa buscar documentação manualmente — o contexto certo aparece na sessão.
+O GitHub Copilot Enterprise lê os `description` de todos os domínios de conhecimento disponíveis a cada sessão. Quando o contexto menciona "componente BBDS" ou "Button" ou "prop", o domínio `bbds-api` é carregado. Quando menciona "autenticação" ou "token" ou "biometria", o domínio `security` é carregado. O engenheiro não precisa buscar documentação manualmente — o contexto certo aparece na sessão.
 
-**Por que não deixar o Copilot buscar a documentação?** O Copilot poderia usar busca na web ou em Confluence. Mas documentação externa pode estar desatualizada, pode não ter o conteúdo exato, e o resultado de uma busca é imprevisível — o chunk certo pode não ser retornado. Skills são determinísticas: o conteúdo exato que o agente recebe é conhecido, versionado em git, e testado em evals.
+**Por que não deixar o Copilot buscar a documentação?** O Copilot poderia usar busca na web ou em Confluence. Mas documentação externa pode estar desatualizada, pode não ter o conteúdo exato, e o resultado de uma busca é imprevisível — o chunk certo pode não ser retornado. Injeção determinística garante que o conteúdo exato que o agente recebe é conhecido, versionado em git, e testado em evals.
 
 ### `copilot-instructions.md` — a camada sempre carregada
 
@@ -191,9 +194,9 @@ Além das skills (carregadas por contexto), o `copilot-instructions.md` é sempr
 - Referências para as skills disponíveis e quando cada uma é relevante
 - Regras absolutas (ex: "NUNCA altere arquivos de teste para fazer um teste passar")
 
-### Tabela de skills e origem
+### Domínios de conhecimento
 
-| Skill | Origem | Conteúdo | Carregada quando |
+| Domínio | Origem | Conteúdo | Injetado quando |
 |---|---|---|---|
 | `platform-standards` | **Fase 0** — curada pela plataforma | Convenções de código, arquitetura de bundle, anti-patterns documentados com exemplos | Qualquer implementação no stack |
 | `security` | **Fase 0** — curada pelo time de segurança | OWASP React Native, secure storage, cert pinning, padrões de autenticação | Features com autenticação, dados sensíveis |
@@ -201,7 +204,7 @@ Além das skills (carregadas por contexto), o `copilot-instructions.md` é sempr
 | `bbds-ux-guidelines` | **Fase 0b** — curada pelo time de UX | Quando usar / não usar cada componente; combinações corretas e incorretas | Decisões de UX, seleção de componentes |
 | `bbds-patterns` | **Fase 0b** — curada pela plataforma | Padrões de composição de telas; hierarquia de componentes; exemplos validados | Geração de nova tela ou fluxo |
 
-**Auto-geração da `bbds-api`:** o script `extract-bbds-types.ts` usa a biblioteca `ts-morph` para ler os TypeScript types do BBDS diretamente do código-fonte. `ts-morph` é uma biblioteca que permite analisar programaticamente TypeScript — ela lê as declarações de tipos, props, valores default (a partir de `defaultProps` ou do tipo), e comentários JSDoc (`@deprecated`, `@default`, descrições). O resultado é um arquivo Markdown estruturado. Esse processo roda automaticamente em CI cada vez que a versão do BBDS muda no `package.json` — sem lag entre release e documentação.
+**Auto-geração do domínio `bbds-api`:** o script `extract-bbds-types.ts` usa a biblioteca `ts-morph` para ler os TypeScript types do BBDS diretamente do código-fonte. `ts-morph` é uma biblioteca que permite analisar programaticamente TypeScript — ela lê as declarações de tipos, props, valores default (a partir de `defaultProps` ou do tipo), e comentários JSDoc (`@deprecated`, `@default`, descrições). O resultado é um arquivo Markdown estruturado. Esse processo roda automaticamente em CI cada vez que a versão do BBDS muda no `package.json` — sem lag entre release e documentação. No MCP server, esse conteúdo é servido via endpoint `get_component_api("Button")` em vez de arquivo SKILL.md.
 
 ---
 
@@ -418,10 +421,10 @@ Para quem conhece o playbook da Anthropic ou o Claude Code, a tabela abaixo most
 | Conceito Anthropic / Claude Code | Equivalente Copilot Enterprise | Como funciona na prática |
 |---|---|---|
 | `CLAUDE.md` | `.github/copilot-instructions.md` | Mesmo propósito: contexto sempre carregado em toda sessão. Mesmo conteúdo. |
-| Skills | `.github/skills/` (SKILL.md) | **Formato idêntico** — skills escritas para o Copilot funcionam no Claude Code sem modificação |
+| Skills / MCP Knowledge | `.github/skills/` (SKILL.md) — interim; direção: MCP server central | Formato SKILL.md idêntico entre Copilot e Claude Code; conteúdo migra para MCP server sem reescrita |
 | Plan Mode | Plan Mode nativo do Copilot | O agente escreve um plano antes de executar — visível para o engenheiro aprovar ou ajustar |
 | Subagents | `runSubAgent` (`#tool:agent/runSubagent`) | O agente delega subtarefas para outro agente especializado; equivalente funcional direto |
 | Hooks (pre/post) | GitHub Actions + git hooks (husky/lefthook) | O Copilot não tem hook system nativo; GitHub Actions substitui para triggers de CI |
 | PR Review | Copilot Code Review (Enterprise) | Feature nativa do Copilot Enterprise; configurada por `REVIEW.md` em cada repo |
 
-**Portabilidade de skills:** o formato SKILL.md é compartilhado entre Copilot Enterprise e Claude Code. Skills escritas neste projeto funcionam em ambos os runtimes — se a organização mudar de runtime no futuro, nenhuma skill precisará ser reescrita.
+**Portabilidade de conteúdo:** o formato SKILL.md é compartilhado entre Copilot Enterprise e Claude Code. O conteúdo de cada domínio de conhecimento pode ser servido via arquivo SKILL.md (mecanismo interim) ou via MCP server (direção) sem reescrita — o mesmo Markdown estruturado funciona nos dois casos.

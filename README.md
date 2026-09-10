@@ -63,7 +63,7 @@ Uma esteira de desenvolvimento onde cada estágio é suportado por um agente de 
 
 ### O que é um "agente" nesse contexto?
 
-No GitHub Copilot Enterprise, um **agente** é uma configuração de comportamento especializado: um conjunto de instruções (via `copilot-instructions.md`) e de conhecimento contextual (via skills SKILL.md) que define como o Copilot age em um determinado estágio do desenvolvimento.
+No GitHub Copilot Enterprise, um **agente** é uma configuração de comportamento especializado: um conjunto de instruções (via `copilot-instructions.md`) e de conhecimento contextual (injetado deterministicamente via MCP server ou skills SKILL.md interim) que define como o Copilot age em um determinado estágio do desenvolvimento.
 
 Quando o Product Owner abre o Copilot com um card do BusinessMap e instrui a gerar o intent.md, está usando o "Agente 01". Quando o engenheiro abre com um `spec.md` e o contexto de implementação, está usando o "Agente 04". O agente não é um processo separado rodando em background — é o Copilot contextualizado para um estágio específico do SDLC.
 
@@ -152,22 +152,23 @@ Cada artefato serve três funções simultâneas:
 
 ---
 
-## O que são Skills?
+## Injeção Determinística de Contexto
 
-Skills são a forma como os agentes recebem conhecimento de domínio especializado — o conhecimento específico desta plataforma que um modelo de IA geral não tem.
+Os agentes recebem conhecimento de domínio especializado de forma **determinística** — não via RAG ou busca semântica sobre documentação indexada, mas via conteúdo curado e injetado de forma previsível e completa. Esse princípio está registrado em [ADR-002](docs/decisions.md#adr-002--injeção-determinística-de-conhecimento-em-vez-de-rag).
 
-Uma skill é um arquivo Markdown (formato SKILL.md) com documentação curada ou gerada automaticamente sobre um assunto específico: a API do design system BBDS, padrões de segurança React Native, convenções de bundle. O GitHub Copilot Enterprise carrega as skills dinamicamente: quando o contexto da sessão menciona um componente BBDS, a skill `bbds-api` é carregada automaticamente com a especificação completa daquele componente.
+**A direção é MCP Server Centralizado.** Um servidor que expõe endpoints estruturados por chave (`get_component_api("Button")`, `get_standard("auth")`) consultados pelo Copilot durante a sessão. O time de produto nunca precisa instalar ou atualizar nada — uma mudança no servidor chega a todos os repos automaticamente. Ver [ADR-009](docs/decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado) e [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
 
-**Skills versus documentação em Confluence:**
+**Enquanto o MCP server não está implantado**, o mecanismo interim são skills (arquivos SKILL.md em `.github/skills/`) — o conteúdo é idêntico; o que muda é como chega ao agente.
 
-| Dimensão | Confluence | Skills |
+**Injeção determinística versus documentação em Confluence:**
+
+| Dimensão | Confluence | MCP server / Skills (determinístico) |
 |---|---|---|
-| Descoberta | Manual — o engenheiro vai buscar | Automática — o Copilot carrega no momento certo |
+| Descoberta | Manual — o engenheiro vai buscar | Automática — o contexto certo aparece na sessão |
 | Atualização | Manual — depende de alguém lembrar | Automática — CI atualiza após cada release do BBDS |
-| Confiabilidade | Pode estar desatualizado | Versionado em git, auditável |
-| Para o agente | Não acessível | O conteúdo exato que o agente recebe |
-
-Skills são o mecanismo correto para **qualidade de contexto** — determinísticas, auditáveis, testáveis em evals. O problema que ainda está em aberto é a **distribuição** desse conteúdo para muitos repositórios mantidos por equipes descentralizadas: skills como arquivos em cada repo dependem de ação voluntária de cada time, o que cria configuration drift sem enforcement centralizado. Essa questão está documentada em [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
+| Confiabilidade | Pode estar desatualizado | Versionado em git, auditável, testado em evals |
+| Para o agente | Não acessível | O conteúdo exato que o agente recebe, sempre o mesmo |
+| Drift entre repos | N/A | Zero (MCP server) — ou visível e rastreável (skills) |
 
 ---
 
@@ -181,14 +182,14 @@ O conhecimento de plataforma — padrões de bundle, anti-patterns, convenções
 
 Cada repo recebe um `copilot-instructions.md` com contexto fundamental: estrutura do bundle, comandos de build/test/lint, allowlist de dependências aprovadas, referências ao conhecimento disponível. Esse arquivo é o "README para o agente" — o que qualquer engenheiro novo precisaria saber, formalizado em uma instrução permanente.
 
-> **⚠️ Pré-requisito da Fase 0 — Auditoria de Conhecimento:** a documentação de plataforma atual está fragmentada e desatualizada. Skills são tão confiáveis quanto o conteúdo que encodam — conteúdo incorreto distribuído de forma determinística é erro codificado com confiança. Por isso, a Fase 0 começa com uma etapa de auditoria e validação antes de qualquer skill ser escrita. Ver [ADR-012](docs/decisions.md#adr-012--auditoria-e-validação-da-base-de-conhecimento-como-pré-requisito-da-fase-0).
+> **⚠️ Pré-requisito da Fase 0 — Auditoria de Conhecimento:** a documentação de plataforma atual está fragmentada e desatualizada. Contexto incorreto distribuído de forma determinística é erro codificado com confiança — seja via MCP server ou via skills. Por isso, a Fase 0 começa com uma etapa de auditoria e validação antes de qualquer domínio de conhecimento entrar em produção. Ver [ADR-012](docs/decisions.md#adr-012--auditoria-e-validação-da-base-de-conhecimento-como-pré-requisito-da-fase-0).
 
 A Fase 0 tem três sub-etapas sequenciais:
 1. **Fase 0-A: Inventário** — levantar onde o conhecimento existe hoje, classificar por domínio, identificar sobreposições e contradições
 2. **Fase 0-B: Validação com SMEs** — engenheiros sênior validam e resolvem o que é canônico; gaps são documentados explicitamente
 3. **Fase 0-C: Fonte de verdade + processo de manutenção** — cada domínio de skill tem um dono e um processo de atualização definidos antes de entrar em produção
 
-Conhecimento criado na Fase 0:
+Domínios de conhecimento criados na Fase 0:
 - `platform-standards` — convenções de código, arquitetura de bundle, anti-patterns documentados
 - `security` — OWASP React Native, secure storage, cert pinning, padrões de autenticação
 
@@ -196,7 +197,7 @@ Conhecimento criado na Fase 0:
 
 **Bootstrap progressivo:** Repos com maior volume de mudanças têm prioridade. O objetivo é ter o nível mínimo em todos os repos ativos em 60 dias.
 
-> **⚠️ Decisão em aberto:** o mecanismo de **distribuição** desse conhecimento para muitos repos descentralizados ainda está sendo decidido. Skills por repo, MCP server centralizado, e pacote npm versionado são as principais alternativas. A decisão bloqueia a entrada da Fase 0 em produção. Ver [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
+> **Mecanismo de distribuição:** a direção é MCP Server Centralizado — zero drift, zero ação necessária dos times. Enquanto o MCP server não está implantado, o mecanismo interim são skills por repo. A decisão de distribuição está em [ADR-009](docs/decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado). A validação de viabilidade bloqueia a entrada em produção com o mecanismo definitivo. Ver [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
 
 ### Fase 0b — Conhecimento BBDS
 
@@ -204,8 +205,8 @@ O BBDS (design system) tem releases frequentes com mudanças de API: novas props
 
 A solução é **auto-geração**: o script `extract-bbds-types.ts` usa a biblioteca `ts-morph` para ler diretamente os TypeScript types do BBDS (a fonte da verdade). A partir dos tipos e JSDoc comentários (`@deprecated`, `@default`, descrições), extrai: quais props existem, quais são os tipos, quais valores são default, quais estão deprecated e qual é o migration path. O resultado é o arquivo `bbds-api-reference.md`, gerado automaticamente em CI a cada bump de versão do BBDS — sem lag, sem intervenção manual.
 
-Skills criadas na Fase 0b:
-- `bbds-api` — props, tipos, defaults, deprecated + migration paths (auto-gerada em CI)
+Domínios de conhecimento criados na Fase 0b:
+- `bbds-api` — props, tipos, defaults, deprecated + migration paths (auto-gerada em CI via ts-morph)
 - `bbds-ux-guidelines` — quando usar / não usar cada componente (curado pelo time de UX, estável entre releases)
 - `bbds-patterns` — padrões de composição de telas (curado pela plataforma)
 
@@ -235,7 +236,7 @@ Isso não é burocracia adicional — é o fluxo de trabalho atual formalizado:
 
 ## Evals — Testes para Configuração de Agentes
 
-Agentes são configurados via instrução — o `copilot-instructions.md` e as skills definem o comportamento. Mudanças nessa configuração podem alterar o comportamento do agente, da mesma forma que uma mudança de código pode quebrar uma função. Sem testes, essas mudanças são deploy no escuro.
+Agentes são configurados via instrução — o `copilot-instructions.md` e o contexto de conhecimento injetado definem o comportamento. Mudanças nessa configuração podem alterar o comportamento do agente, da mesma forma que uma mudança de código pode quebrar uma função. Sem testes, essas mudanças são deploy no escuro.
 
 **Evals são testes para configuração de agentes.** Cada agente tem um conjunto de 20–50 tarefas de avaliação baseadas em casos reais do desenvolvimento mobile:
 
@@ -249,7 +250,7 @@ agents/01-intent/evals/tasks/task-001-portabilidade/
     └── validation.json     # critérios de avaliação (campos obrigatórios, schema)
 ```
 
-Para cada task: um input realista, um expected output, e um grader (script ou rubrica de modelo). O CI roda a eval suite automaticamente quando `copilot-instructions.md` ou uma skill é modificada. Se o pass rate cair abaixo de 85%, o merge é bloqueado.
+Para cada task: um input realista, um expected output, e um grader (script ou rubrica de modelo). O CI roda a eval suite automaticamente quando `copilot-instructions.md` ou o conteúdo de um domínio de conhecimento é modificado. Se o pass rate cair abaixo de 85%, o merge é bloqueado.
 
 **Dois tipos de grader:**
 - **Code-based**: verifica o output com regex e verificações determinísticas — rápido, sem custo de modelo, para estrutura e schema
@@ -267,7 +268,7 @@ Para cada task: um input realista, um expected output, e um grader (script ou ru
 sdlc-agentico/
 ├── .github/
 │   ├── copilot-instructions.md     # contexto principal — carregado em toda sessão do Copilot
-│   ├── skills/                     # skills de conhecimento (platform, security, BBDS)
+│   ├── skills/                     # skills (mecanismo interim — direção: MCP server)
 │   │   ├── platform-standards/
 │   │   ├── security/
 │   │   ├── bbds-api/               # auto-gerada via ts-morph
@@ -291,7 +292,7 @@ sdlc-agentico/
 └── docs/                           # esta documentação
     ├── architecture.md
     ├── decisions.md
-    ├── knowledge-governance.md     # ⚠️ DECISÃO ABERTA: distribuição de conhecimento em escala para equipes descentralizadas
+    ├── knowledge-governance.md     # distribuição de conhecimento: análise e direção (MCP server centralizado)
     └── agents/                     # documentação detalhada de cada agente
         ├── 01-intent.md
         ├── 02-spec.md
@@ -306,8 +307,8 @@ Se você está chegando agora, a sequência recomendada:
 
 | Etapa | Documento | O que você vai encontrar |
 |---|---|---|
-| 1 | [`docs/knowledge-governance.md`](docs/knowledge-governance.md) | ⚠️ Leia antes: o problema de distribuição de conhecimento em escala para equipes descentralizadas e as alternativas em análise |
-| 2 | [`docs/architecture.md`](docs/architecture.md) | Como as entidades se conectam — sistemas externos, skills, cadeia de artefatos, monitoramento |
+| 1 | [`docs/knowledge-governance.md`](docs/knowledge-governance.md) | Distribuição de conhecimento em escala: o problema, as alternativas analisadas e a direção escolhida (MCP server centralizado) |
+| 2 | [`docs/architecture.md`](docs/architecture.md) | Como as entidades se conectam — sistemas externos, infraestrutura de conhecimento, cadeia de artefatos, monitoramento |
 | 3 | [`docs/decisions.md`](docs/decisions.md) | Por que cada decisão foi tomada — contexto, alternativas, justificativa |
 | 4 | `docs/agents/` | Especificação detalhada de cada agente: fluxo completo, inputs/outputs com schema, evals, governança, métricas |
 | 5 | [`plan.md`](plan.md) | Plano de implementação técnico completo (fonte da verdade para execução) |

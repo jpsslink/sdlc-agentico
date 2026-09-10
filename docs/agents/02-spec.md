@@ -1,7 +1,7 @@
 # Agente 02 — Spec
 
 **Estágio:** Design  
-**Runtime:** GitHub Copilot agent mode + skills de política + skills BBDS  
+**Runtime:** GitHub Copilot agent mode + contexto de plataforma (MCP server ou skills interim)  
 **Responsável pela aprovação:** Product Owner + Policy Owners (flags)
 
 > Transforma um `intent.md` aprovado em uma especificação técnica completa (`spec.md`), com políticas aplicadas durante a geração — não descobertas em revisão semanas depois. Mapeia componentes BBDS por tela antes de qualquer implementação.
@@ -12,15 +12,15 @@
 
 Hoje, a spec vive em Confluence, em reuniões ou na cabeça do dev. O agente força que: (1) políticas de segurança e compliance sejam verificadas durante a geração da spec, não após; (2) os componentes BBDS sejam escolhidos com base em critérios de UX documentados, não por preferência individual; (3) o protótipo Figma seja referenciado formalmente, criando vínculo rastreável entre design e spec.
 
-O Copilot carrega as skills relevantes automaticamente — o PO não precisa saber quais políticas existem para que elas sejam aplicadas.
+O contexto de plataforma é injetado deterministicamente — o PO não precisa saber quais políticas existem para que elas sejam aplicadas.
 
 ---
 
 ## Pré-requisitos
 
-- **Fase 0b ativa**: skills `bbds-ux-guidelines` e `bbds-patterns` publicadas em `.github/skills/`
+- **Fase 0b ativa**: domínios `bbds-ux-guidelines` e `bbds-patterns` disponíveis (via MCP server ou skills interim em `.github/skills/`)
 - `bbds-api-reference.md` gerado e disponível em `platform-knowledge/`
-- Skills `security` e `platform-standards` publicadas (Fase 0)
+- Domínios `security` e `platform-standards` disponíveis (Fase 0)
 - `templates/spec.md` disponível
 - `templates/api-contract.md` disponível
 
@@ -40,11 +40,11 @@ O agente lê o arquivo inteiro. Os campos mais relevantes para a geração da sp
 | `constraints` | Constraints que entram diretamente na spec (técnicas, regulatórias, de negócio) |
 | `open_questions` | Flags de incerteza — se ainda há perguntas abertas, a spec as documenta como pendências |
 
-### Skills carregadas automaticamente
+### Contexto de plataforma injetado
 
-O Copilot carrega skills com base na `description` no SKILL.md e no contexto do pedido:
+O Copilot injeta contexto de plataforma com base na descrição de cada domínio e no contexto do pedido. No mecanismo atual (skills interim), o carregamento é dinâmico via `description` no SKILL.md. No MCP server (direção), o agente consulta o endpoint correspondente:
 
-| Skill | Quando é carregada | O que adiciona à spec |
+| Domínio | Quando é injetado | O que adiciona à spec |
 |---|---|---|
 | `security` | Qualquer feature com autenticação, dados de usuário, pagamentos | Requisitos de segurança, flags de OWASP, constraints de armazenamento |
 | `platform-standards` | Toda spec de feature mobile | Constraints de arquitetura, padrões de bundle, anti-patterns |
