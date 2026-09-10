@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5fa8106d404a14730578565e96a489418237590c",
+  "prompts": {},
+  "humans": {
+    "h_09ab7d1a34fdb7": {
+      "author": "F4957145 Joao Paulo Silva e Sousa <joaopaulo.silva@bb.com.br>"
+    }
+  }
+}
