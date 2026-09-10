@@ -8,6 +8,24 @@
 
 ---
 
+## Quando os evals rodam
+
+Os evals **não são um passo da esteira de feature** — são um CI gate separado, acionado por mudanças na configuração dos agentes.
+
+**Trigger:** o workflow `eval-suite.yml` dispara automaticamente quando um PR altera qualquer um destes caminhos:
+
+```
+.github/copilot-instructions.md     # instrução principal do Copilot
+agents/*/evals/**                   # tasks e graders de qualquer agente
+platform-knowledge/**               # conteúdo de domínio injetado via MCP
+```
+
+**Cobertura:** a eval suite cobre todos os agentes ativos (02–07). O Agente 05 é responsável pela infraestrutura, mas não é o único avaliado — cada agente tem suas próprias tasks em `agents/*/evals/tasks/`.
+
+**O que NÃO dispara evals:** PRs de feature (código novo, bugfixes, refactoring). Um PR que altera `src/services/creditApi.ts` passa pela suite de testes padrão do repo — não pela eval suite dos agentes.
+
+---
+
 ## O que muda
 
 Agentes de IA são configurados via prompt — e configurações mudam. Sem testes, uma mudança em `copilot-instructions.md` ou no conteúdo de um domínio de conhecimento pode quebrar o comportamento de um agente existente sem que ninguém perceba.
@@ -121,7 +139,7 @@ Gerado como GitHub Actions job summary após cada run do `eval-suite.yml`:
 flowchart TD
     subgraph TRIGGER ["Triggers"]
         T1[Push de código\nem qualquer branch]
-        T2[Mudança em\ncopilot-instructions.md\nou skills]
+        T2[Mudança em\ncopilot-instructions.md\nou conhecimento]
         T3[PR aberto\nou sincronizado]
     end
 
@@ -270,7 +288,7 @@ O **tech lead** define e aprova o threshold (default: 85% global, mas pode varia
 
 O `eval-suite.yml` bloqueia o merge de PRs que alterem:
 - `.github/copilot-instructions.md`
-- `.github/skills/*/SKILL.md`
+- `platform-knowledge/**`
 - `templates/*.md`
 - `agents/*/evals/`
 
