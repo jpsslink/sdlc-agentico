@@ -64,7 +64,6 @@ Para a funcionalidade de avaliação dos agentes:
 
 ```
 agents/
-├── 01-intent/evals/tasks/        # 20-50 tasks de eval do Intent Agent
 ├── 02-spec/evals/tasks/          # tasks do Spec Agent
 ├── 03-plan/evals/tasks/          # tasks do Plan Agent
 ├── 04-build/evals/tasks/         # tasks do Build Agent

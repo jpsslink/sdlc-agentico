@@ -171,7 +171,7 @@ Sem testes, mudanças de configuração são deploy no escuro.
 
 ### Decisão
 
-Cada agente tem uma suite de 20–50 evals baseadas em casos reais. Mudanças em `copilot-instructions.md` ou skills disparam `eval-suite.yml` em CI antes do merge. Pass rate global ≥ 85% é o gate de avanço.
+Cada agente tem uma suite de 20–50 evals baseadas em casos reais. Mudanças em `copilot-instructions.md` ou `platform-knowledge/**` disparam `eval-suite.yml` em CI antes do merge. Pass rate global ≥ 85% é o gate de avanço.
 
 ### Justificativa
 

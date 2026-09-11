@@ -48,7 +48,7 @@ sdlc-agentico/
 │   ├── skills/                          # Skills (mecanismo interim — direção: MCP server central)
 │   │   ├── platform-standards/
 │   │   │   └── SKILL.md
-│   │   ├── security/
+│   │   ├── security/                   # FASE 0
 │   │   │   └── SKILL.md               # OWASP RN, secure storage, cert pinning
 │   │   ├── branding/                   # FASE 2
 │   │   │   └── SKILL.md
@@ -118,13 +118,7 @@ sdlc-agentico/
 posteriores operam sem contexto — geram código que viola padrões internos.
 Este é o maior gargalo atual e deve ser endereçado antes de qualquer outro stage.
 
-> **⚠️ Decisão de Arquitetura em Aberto:** o mecanismo de **distribuição** desse
-> conhecimento para muitos repos descentralizados ainda está em análise. O plano atual usa Skills (SKILL.md)
-> por repo, mas esse modelo apresenta um problema de governança em escala: times
-> descentralizados controlam seus próprios repos, o que cria configuration drift sem
-> enforcement centralizado. Antes desta fase entrar em produção, a arquitetura de
-> distribuição precisa ser decidida. Ver análise completa em
-> [`docs/knowledge-governance.md`](knowledge-governance.md).
+> **Direção de arquitetura:** o mecanismo de **distribuição** do conhecimento para muitos repos descentralizados é o **MCP Server Centralizado** (modelo Stripe) — zero drift, auditabilidade total via logs. Ver análise completa em [`docs/knowledge-governance.md`](knowledge-governance.md) e decisão em [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado).
 
 ### O que fazer
 
@@ -153,8 +147,7 @@ Este é o maior gargalo atual e deve ser endereçado antes de qualquer outro sta
 
 ### Artefatos resultantes
 - `platform-knowledge/platform-standards-draft.md` (aprovado pela equipe de plataforma)
-- Mecanismo de distribuição **a definir** — skill local, MCP server centralizado, ou pacote npm
-  (ver [`docs/knowledge-governance.md`](knowledge-governance.md))
+- Mecanismo de distribuição: **MCP Server Centralizado** (ver [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado))
 - `templates/copilot-instructions.md` (template base para todos os repos de equipe)
 
 ---
@@ -283,12 +276,13 @@ O `intent.md` é o artefato que a plataforma de agilidade/área negocial entrega
 
 ```yaml
 ---
-id: [ID do card no sistema de backlog — ex: BM-1234]
-source: businessmap | manual
-created_by: [nome do autor]
+title: [Título do intent]
+source_card: [URL do card no BusinessMap — ex: https://businessmap.io/cards/4521]
+author: [nome do autor]
 created_at: [timestamp ISO 8601 — ex: 2026-09-08T14:00:00-03:00]
+template_version: "1.0"
+related_intents: []             # IDs de intents relacionados, se houver
 status: approved                # deve estar 'approved' para entrar na esteira
-businessmap_url: [URL do card]  # rastreabilidade bidirecional
 ---
 ```
 
@@ -314,12 +308,13 @@ businessmap_url: [URL do card]  # rastreabilidade bidirecional
 
 ```markdown
 ---
-id: BM-4521
-source: businessmap
-created_by: Ana Costa
+title: Portabilidade de salário PJ — seleção de conta destino
+source_card: https://businessmap.io/cards/4521
+author: Ana Costa
 created_at: 2026-09-05T10:30:00-03:00
+template_version: "1.0"
+related_intents: []
 status: approved
-businessmap_url: https://businessmap.io/cards/4521
 ---
 
 ## Problema
@@ -568,8 +563,8 @@ como código. Regressões detectadas antes de chegar ao engenheiro.
 5. Quando incidente de produção ocorre: novo eval task criado a partir do bug
 
 **GitHub Action `eval-suite.yml`:**
-- Trigger: push para main/staging ou mudança em `.github/copilot-instructions.md` / `.github/skills/`
-- Roda todas as tasks de eval de todos os 7 agentes
+- Trigger: push para main/staging ou mudança em `.github/copilot-instructions.md` / `platform-knowledge/**`
+- Roda todas as tasks de eval de todos os 6 agentes
 - Report de pass rate por agente
 - Gera badge e histórico de tendência
 
@@ -609,6 +604,7 @@ comentários de review. Humano aprova, não substitui.
 2. Segurança / vulnerabilidades (severidade: Important)
 3. Compliance com spec.md e plan.md (severidade: Important)
 4. Padrões de plataforma React Native (severidade: Nit se cosmético)
+5. Prontidão de backend (severidade: Important)
 
 ## Exclusões
 - Arquivos gerados (*.generated.ts, __mocks__)
@@ -621,7 +617,7 @@ comentários de review. Humano aprova, não substitui.
 
 **Fluxo concreto:**
 1. PR aberto → Copilot Code Review roda automaticamente (Enterprise feature)
-2. Review usa `REVIEW.md` como rubrica, `spec.md` como spec de referência
+2. Review usa `REVIEW.md` como rubrica, `spec.md` e `plan.md` como referência
 3. Engenheiro menciona `@copilot` em comentários para que ele endereça
 4. Branch protection: requer 1 humano + CI green para merge
 5. Agente não pode aprovar o próprio código (separação de funções)
@@ -682,6 +678,11 @@ antes de gerar o `intent.md`. Achados re-entram no pipeline formalmente. Loop se
 
 **Ferramentas**: GitHub Actions (cron agendado) + Firebase MCP + Journey Monitor API/MCP + Copilot API
 
+**Agendamento dos crons:**
+- Top crashes (Firebase): horário
+- Journey metrics (Journey Monitor): a cada 4h
+- CI/ops bands (bands.yaml): horário
+
 **Três fontes de monitoramento:**
 
 | Fonte | O que detecta | Localização entregue | Path de análise |
@@ -695,6 +696,7 @@ antes de gerar o `intent.md`. Achados re-entram no pipeline formalmente. Loop se
 **Output para todas as fontes:**
 - GitHub issue (visibilidade imediata para on-call)
 - PR com `intent.md` estruturado (entrada formal no pipeline SDLC)
+- Relatório semanal de dívida de backend (quantos `*ServiceMock.ts` sem `*ServiceImpl.ts` correspondente)
 
 ---
 
@@ -743,6 +745,7 @@ em evals com casos conhecidos.
 # Métricas de CI/operação
 - metric: ci_test_failure_rate
   baseline: rolling_30d
+  source: github_actions
   tiers:
     1sigma: { action: log }
     2sigma: { action: diagnose, tools: "read,grep,gh-run-view" }
@@ -754,12 +757,13 @@ em evals com casos conhecidos.
   source: firebase_mcp
   tiers:
     1sigma: { action: log }
-    2sigma: { action: diagnose, tools: "firebase-mcp,stacktrace-deobfuscate,gh-issue" }
+    2sigma: { action: diagnose, tools: "firebase-mcp,gh-issue" }
     3sigma: { action: propose, routes: [intent_md, runbook:rollback-deploy] }
 
 # Novo crash class (Firebase) — sem baseline, qualquer ocorrência = ação
 - metric: firebase_new_crash_class
   baseline: none
+  source: firebase_mcp
   source: firebase_mcp
   tiers:
     any: { action: diagnose, tools: "firebase-mcp,stacktrace-deobfuscate,gh-issue,intent_md" }
@@ -771,7 +775,7 @@ em evals com casos conhecidos.
   source: journey_monitor
   tiers:
     1sigma: { action: log }
-    2sigma: { action: correlate, tools: "firebase-mcp,git-log,gh-release,journey-monitor" }
+    2sigma: { action: correlate, tools: "firebase-mcp,git-log,gh-release" }
     3sigma: { action: diagnose+intent_md, uses: correlation_pipeline }
 ```
 
@@ -891,7 +895,7 @@ Arquivo `.github/copilot-instructions.md` com:
 20 tasks de eval baseadas nas tarefas mais comuns do bundle.
 
 ### Nível 3 — Pipeline completo (target para novos fluxos)
-Todos os 7 agentes ativos, metrificados, com evals cobrindo 80% dos casos de uso.
+Todos os 6 agentes ativos, metrificados, com evals cobrindo 80% dos casos de uso.
 
 **Priorização:** Repos com maior volume de mudanças/semana primeiro.
 
@@ -906,7 +910,6 @@ definição das políticas. **Formato:** SKILL.md com frontmatter YAML `name` e
 | Skill | Arquivo | Conteúdo | Responsável |
 |---|---|---|---|
 | `branding` | `.github/skills/branding/SKILL.md` | Cores, tipografia, voz/tom, identidade visual | Marketing/Design |
-| `security` | `.github/skills/security/SKILL.md` | OWASP RN, secure storage, cert pinning, data protection | Security team |
 | `compliance` | `.github/skills/compliance/SKILL.md` | LGPD/GDPR, WCAG 2.1, data residency | Legal/Compliance |
 | `ux` | `.github/skills/ux/SKILL.md` | Design system components, interaction patterns, navigation | UX team |
 
@@ -973,7 +976,7 @@ Incidente  →  [intent.md automático] + [On-call: triagem]
 7. **Maintain**: Simular breach de métrica → intent.md gerado em <30min?
 
 ### Suite de evals end-to-end:
-- `eval-suite.yml` roda todos os 7 agentes em sequência com inputs reais
+- `eval-suite.yml` roda todos os 6 agentes em sequência com inputs reais
 - Pass rate geral ≥ 85% = esteira funcional
 - Trends semanais plotados em dashboard (GitHub Actions summary page ou similar)
 
@@ -1003,10 +1006,10 @@ Fase 2 TBD:  Skills de branding, compliance, ux (criação com policy owners)
 
 ## Decisões Abertas / Próximos Passos
 
-1. **Arquitetura de distribuição de conhecimento** ⚠️ (bloqueia Fase 0):
-   Decidir entre MCP server centralizado (modelo Stripe), pacote npm versionado
-   (modelo Shopify), ContextOps com push automático, ou combinação desses modelos.
-   Ver análise completa em [`docs/knowledge-governance.md`](docs/knowledge-governance.md).
+1. **Arquitetura de distribuição de conhecimento** — direção decidida (MCP Server Centralizado, ver [ADR-009](decisions.md#adr-009--arquitetura-de-distribuição-de-conhecimento-direção-mcp-server-centralizado)):
+   Validações pendentes antes da implementação: viabilidade de construir/operar o MCP server internamente,
+   aceitação dos times de produto, avaliação de MCP Gateway para auditoria regulatória, estratégia de
+   faseamento (org-level instructions + skills curadas no MVP; MCP server na sequência).
    Participantes: time de plataforma + arquitetura + segurança.
 
 2. **CI/CD híbrido**: Identificar qual parte do pipeline usa GitHub Actions vs. outro sistema
@@ -1022,7 +1025,7 @@ Fase 2 TBD:  Skills de branding, compliance, ux (criação com policy owners)
    adicionar Figma MCP ao Agente 02 (Spec) para puxar specs diretamente.
 
 6. **Skills — Fase 2**: Agendar sessões de trabalho com policy owners (branding,
-   security, compliance, UX) para criar as 4 skills pendentes.
+   compliance, UX) para criar as 3 skills pendentes.
 
 7. **MCP de catálogo de serviços de backend** (melhoria planejada para Agente 02):
    Expor os serviços de backend existentes via MCP para que o Agente 02 consulte

@@ -281,8 +281,8 @@ código ──────── A implementação.
     │  Sem esse gate: código com bugs ou prop BBDS incorreta chega ao review humano.
     ▼
 PR ─────────── O diff completo.
-               Copilot Code Review analisa 4 passes: bugs/logic errors, segurança,
-               conformidade com spec.md/plan.md, padrões de plataforma.
+               Copilot Code Review analisa 5 passes: bugs/logic errors, segurança,
+               conformidade com spec.md/plan.md, padrões de plataforma, prontidão de backend.
                Findings postados como comentários inline com severidade e sugestão de fix.
     │
     │  Gate: Copilot Code Review sem Important findings + 1 humano aprova
@@ -339,7 +339,7 @@ Step 1: Firebase MCP
   → Resultado: CRASH_FOUND: task_001, TypeError em validacao.ts:47, 89 ocorrências
 
 Step 2: git log
-  → git log --oneline --follow -- "*ConfirmacaoDadosScreen*" --since="24h ago"
+  → git log --oneline --follow -- "*ConfirmacaoDadosScreen*" --since=48h
   → Resultado: COMMIT_FOUND: abc123 "fix: validação de CPF" há 6h (autor: joão)
 
 Step 3: gh release list
